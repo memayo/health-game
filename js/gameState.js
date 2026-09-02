@@ -1,0 +1,166 @@
+// Pure authoritative game rules. No DOM, no Firebase.
+
+import { PHASE, ROLE, ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from './gameConfig.js';
+import { ROOM_IDS, isAdjacent } from './map.js';
+
+export { PHASE, ROLE };
+
+export function makeRoomCode() {
+  let s = '';
+  for (let i = 0; i < ROOM_CODE_LENGTH; i++) {
+    s += ROOM_CODE_ALPHABET[Math.floor(Math.random() * ROOM_CODE_ALPHABET.length)];
+  }
+  return s;
+}
+
+
+/** Unbiased index in [0,n) - rejection sampling so no id is favoured. */
+function randomIndex(n) {
+  if (typeof crypto !== 'undefined' && crypto.getRandomValues) {
+    const limit = Math.floor(0x100000000 / n) * n;
+    const buf = new Uint32Array(1);
+    let v;
+    do { crypto.getRandomValues(buf); v = buf[0]; } while (v >= limit);
+    return v % n;
+  }
+  return Math.floor(Math.random() * n);
+}
+
+/**
+ * Picks exactly one Hunter at random; everyone else is a Player.
+ * Join order gives no advantage. Called once, by the Host, on Start.
+ * @returns {Object<string,string>} uid -> role
+ */
+export function assignRandomRoles(playerIds) {
+  const ids = Array.from(playerIds);
+  const out = {};
+  if (!ids.length) return out;
+  const hunter = ids[randomIndex(ids.length)];
+  for (const id of ids) out[id] = (id === hunter) ? ROLE.HUNTER : ROLE.PLAYER;
+  return out;
+}
+
+/** Fisher-Yates using the unbiased index above. */
+export function shuffled(list) {
+  const a = Array.from(list);
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = randomIndex(i + 1);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+/** Any of the six rooms, uniformly. */
+export function getRandomRoom() {
+  return ROOM_IDS[randomIndex(ROOM_IDS.length)];
+}
+
+/** Exactly one uid, uniformly. */
+export function selectRandomHunter(playerIds) {
+  const ids = Array.from(playerIds);
+  return ids.length ? ids[randomIndex(ids.length)] : null;
+}
+
+/**
+ * Random spawn per Player. Rooms are NOT unique - several Players may share one.
+ * Isolated so the spawn rule can be swapped without touching the phase machine.
+ */
+export function assignRandomStartingRooms(playerIds) {
+  const out = {};
+  for (const id of playerIds) out[id] = getRandomRoom();
+  return out;
+}
+
+/** Game length is the size of the imported deck. Capped here if ever needed. */
+export function getTotalRounds(questions) {
+  return Array.isArray(questions) ? questions.length : 0;
+}
+
+/**
+ * One shared random permutation plus a distinct random offset per participant.
+ * Participant p answers master[(offset_p + round - 1) % N] in each round, so:
+ *   - nobody repeats a question until their deck is exhausted,
+ *   - distinct offsets => different questions in the same round,
+ *     which is possible only while participants <= questions.
+ * @returns {{master:string[], offsets:Object<string,number>}}
+ */
+export function assignQuestionDecks(participantIds, questionIds) {
+  const master = shuffled(questionIds);
+  const ids = Array.from(participantIds);
+  const offsets = {};
+  if (!master.length) return { master, offsets };
+
+  // Distinct offsets while they last, then wrap (more participants than questions).
+  const pool = shuffled(master.map((_, i) => i));
+  ids.forEach((id, i) => {
+    offsets[id] = i < pool.length ? pool[i] : randomIndex(master.length);
+  });
+  return { master, offsets };
+}
+
+/** Question id for one participant in one 1-based round. */
+export function questionIdFor(assignment, uid, round) {
+  const master = (assignment && assignment.master) || [];
+  if (!master.length) return null;
+  const offset = ((assignment.offsets || {})[uid]) || 0;
+  return master[(offset + round - 1) % master.length];
+}
+
+/**
+ * Winner check, run AFTER the result of a round has been resolved.
+ * @returns {'hunter'|'players'|null} null = keep playing
+ */
+export function decideWinner({ alivePlayerCount, round, totalRounds }) {
+  if (alivePlayerCount === 0) return ROLE.HUNTER;
+  if (round >= totalRounds) return 'players';
+  return null;
+}
+
+/**
+ * Resolve one Player's move.
+ * @returns {{from:string,to:string,success:boolean}}
+ */
+export function resolveMove(currentRoom, target, lockedRoom) {
+  if (!target || target === currentRoom || !isAdjacent(currentRoom, target)) {
+    return { from: currentRoom, to: currentRoom, success: false };
+  }
+  if (lockedRoom && target === lockedRoom) {
+    return { from: currentRoom, to: currentRoom, success: false };
+  }
+  return { from: currentRoom, to: target, success: true };
+}
+
+/**
+ * `correct` is a letter, or a list of letters when the source file allowed
+ * several correct answers. Any listed answer counts as correct.
+ */
+export function isCorrect(answer, correct) {
+  if (!answer || !correct) return false;
+  const given = String(answer).trim().toUpperCase();
+  const accepted = Array.isArray(correct) ? correct : [correct];
+  return accepted.some(c => String(c).trim().toUpperCase() === given);
+}
+
+/** Shield for THIS turn only: successful move AND correct answer. */
+export function earnsShield(movementSuccess, answeredCorrectly) {
+  return movementSuccess === true && answeredCorrectly === true;
+}
+
+/**
+ * Resolve the attack for one alive Player.
+ * @returns {'safe'|'shielded'|'eliminated'}
+ */
+export function resolveAttackFor(player, hunterCorrect, hunterTarget) {
+  if (!hunterCorrect || !hunterTarget) return 'safe';
+  if (player.currentRoom !== hunterTarget) return 'safe';
+  return player.shield ? 'shielded' : 'eliminated';
+}
+
+/** Convenience wrapper: is the match over? See decideWinner for the winner. */
+export function shouldEndGame(gameState) {
+  return decideWinner({
+    alivePlayerCount: gameState.alivePlayerCount,
+    round: gameState.round,
+    totalRounds: gameState.totalRounds
+  }) !== null;
+}

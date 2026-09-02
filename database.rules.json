@@ -1,0 +1,101 @@
+{
+  "rules": {
+    ".read": false,
+    ".write": false,
+
+    "rooms": {
+      "$room": {
+        ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid && !newData.exists()",
+
+        "meta": {
+          ".read": "auth != null",
+          ".write": "auth != null && (!data.exists() || data.child('hostUid').val() === auth.uid)",
+          "hostUid": { ".validate": "newData.val() === auth.uid" },
+          "createdAt": { ".validate": "newData.isNumber()" },
+          "$other": { ".validate": false }
+        },
+
+        "public": {
+          ".read": "auth != null",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid"
+        },
+
+        "players": {
+          ".read": "auth != null",
+          "$uid": {
+            ".write": "auth != null && (auth.uid === $uid || root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid)",
+            "displayName": { ".validate": "newData.isString() && newData.val().length <= 20" },
+            "connected": { ".validate": "newData.isBoolean()" },
+            "alive": { ".validate": "root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid && newData.isBoolean()" },
+            "$other": { ".validate": false }
+          }
+        },
+
+        "positions": {
+          ".read": "auth != null && (root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid || root.child('rooms/' + $room + '/roles/' + auth.uid).val() === 'player')",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          "$uid": { ".validate": "newData.isString()" }
+        },
+
+        "questions": {
+          ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          "$uid": { ".read": "auth != null && auth.uid === $uid" }
+        },
+
+        "roles": {
+          ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          "$uid": {
+            ".read": "auth != null && auth.uid === $uid",
+            ".validate": "newData.val() === 'player' || newData.val() === 'hunter'"
+          }
+        },
+
+        "actions": {
+          ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+
+          "moves": {
+            ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+            "$uid": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $room + '/public/phase').val() === 'move' && root.child('rooms/' + $room + '/players/' + $uid + '/alive').val() === true",
+              "target": { ".validate": "newData.isString()" },
+              "at": { ".validate": "newData.val() === now" },
+              "$other": { ".validate": false }
+            }
+          },
+
+          "answers": {
+            ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+            "$uid": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $room + '/public/phase').val() === 'quiz' && root.child('rooms/' + $room + '/players/' + $uid + '/alive').val() === true",
+              "choice": { ".validate": "newData.isString() && newData.val().length === 1" },
+              "at": { ".validate": "newData.val() === now" },
+              "$other": { ".validate": false }
+            }
+          },
+
+          "hunter": {
+            ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+            "$uid": {
+              ".read": "auth != null && auth.uid === $uid",
+              ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $room + '/roles/' + $uid).val() === 'hunter' && root.child('rooms/' + $room + '/public/phase').val() === 'move'",
+              "target": { ".validate": "newData.isString() || newData.val() === null" },
+              "lock": { ".validate": "newData.isString() || newData.val() === null" },
+              "at": { ".validate": "newData.val() === now" },
+              "$other": { ".validate": false }
+            }
+          }
+        },
+
+        "hostPrivate": {
+          ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
+          ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid"
+        }
+      }
+    }
+  }
+}

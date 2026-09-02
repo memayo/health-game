@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Health Game - Host</title>
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/game.css">
+</head>
+<body class="host">
+  <header id="bar" class="bar hidden">
+    <span id="bar-code" class="code"></span>
+    <span id="round" class="round"></span>
+    <span id="phase" class="phase"></span>
+    <span id="timer" class="timer"></span>
+    <button id="close-bar" class="btn btn-mini">Close Room</button>
+  </header>
+
+  <section id="lobby" class="screen lobby">
+    <div id="lobby-code" class="lobby-code"></div>
+    <h1 class="lobby-title">LOBBY</h1>
+    <ul id="player-list" class="lobby-players"></ul>
+    <div class="lobby-actions">
+      <label class="btn" for="file">Questions</label>
+      <input id="file" type="file" accept=".xlsx" hidden>
+      <button id="start" class="btn" disabled>Start</button>
+      <button id="close-lobby" class="btn btn-ghost">Close Room</button>
+    </div>
+    <p id="hint" class="msg"></p>
+  </section>
+
+  <section id="board" class="board hidden">
+    <div id="stage"></div>
+  </section>
+
+  <section id="gameover" class="gameover hidden">
+    <div class="go-inner">
+      <h1 id="go-title" class="go-title"></h1>
+      <p id="go-reveal" class="go-reveal"></p>
+      <ul id="go-survivors" class="go-survivors"></ul>
+      <button id="close-over" class="btn">Close Room</button>
+    </div>
+  </section>
+
+  <div id="blackout" class="blackout-veil"></div>
+  <script type="module" src="js/host.js"></script>
+</body>
+</html>

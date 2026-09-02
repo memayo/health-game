@@ -1,0 +1,144 @@
+:root{
+  --bg:#0b0d12;
+  --panel:#141821;
+  --line:#252b38;
+  --text:#d9dee8;
+  --dim:#7b8496;
+  --accent:#4ade80;
+  --danger:#ef4444;
+  --shield:#38bdf8;
+}
+*{box-sizing:border-box}
+html{height:100%}
+body{
+  margin:0;background:var(--bg);color:var(--text);
+  font-family:ui-monospace,"Courier New",monospace;
+  -webkit-text-size-adjust:100%;
+  display:flex;flex-direction:column;
+  /* min-height, not height: the page may grow and scroll instead of clipping. */
+  min-height:100%;
+  min-height:100dvh;
+  overflow-x:hidden;
+  /* Largest the map may get; the quiz always flows below it. */
+  --map-max-h:58vh;
+}
+body.host{--map-max-h:78vh}
+.hidden{display:none !important}
+
+.btn{
+  background:var(--panel);color:var(--text);
+  border:1px solid var(--line);border-radius:4px;
+  padding:12px 20px;font:inherit;font-size:16px;letter-spacing:1px;
+  cursor:pointer;text-align:center;
+}
+.btn:hover:not(:disabled){border-color:var(--accent);color:#fff}
+.btn:disabled{opacity:.4;cursor:default}
+
+/* Full-screen views: only one is visible at a time. */
+.screen{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  gap:18px;padding:24px;text-align:center;
+}
+.stack{display:flex;flex-direction:column;gap:10px;width:min(280px,84vw)}
+.stack input{
+  background:#0f131b;border:1px solid var(--line);border-radius:4px;
+  color:var(--text);padding:12px;font:inherit;font-size:16px;text-align:center;letter-spacing:2px;
+}
+.stack #join-code{text-transform:uppercase}
+.btn-ghost{background:transparent;color:var(--dim)}
+.msg{color:var(--dim);font-size:13px;margin:0;text-align:center;min-height:1em}
+
+/* Lobby */
+.lobby-code{
+  font-size:clamp(44px,13vw,88px);letter-spacing:.18em;color:#fff;line-height:1;
+  text-indent:.18em;
+}
+.lobby-title{
+  margin:0;font-weight:400;font-size:clamp(14px,3.5vw,20px);
+  letter-spacing:.45em;text-indent:.45em;color:var(--dim);
+}
+.lobby-players{
+  list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;
+  gap:10px;justify-content:center;max-width:680px;
+}
+.lobby-players li{
+  border:1px solid var(--line);border-radius:6px;background:var(--panel);
+  padding:12px 22px;font-size:clamp(16px,4vw,22px);color:var(--text);
+}
+.lobby-players li.empty{border-style:dashed;color:var(--dim)}
+.lobby-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+
+.bar{
+  display:flex;gap:12px;align-items:center;justify-content:space-between;
+  padding:8px 12px;border-bottom:1px solid var(--line);font-size:13px;color:var(--dim);
+}
+.code{letter-spacing:3px;color:var(--text);font-size:18px}
+.phase{text-transform:uppercase;letter-spacing:2px}
+
+.round{letter-spacing:2px;color:var(--text)}
+.status{letter-spacing:1px}
+.timer{
+  min-width:2.2em;text-align:center;font-size:20px;color:var(--text);
+  font-variant-numeric:tabular-nums;
+}
+.btn-mini{padding:6px 10px;font-size:12px;letter-spacing:1px}
+
+/* Game over */
+.gameover{
+  position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;
+  padding:24px;background:radial-gradient(ellipse at center,#161a24 0%,#05070a 70%);
+  animation:go-in 600ms ease both;
+}
+.go-inner{display:flex;flex-direction:column;align-items:center;gap:18px;text-align:center}
+.go-title{
+  margin:0;font-size:clamp(40px,11vw,110px);line-height:1;letter-spacing:.06em;
+  color:#fff;text-shadow:0 0 26px rgba(255,255,255,.16);
+  animation:go-title 700ms cubic-bezier(.2,.9,.2,1) both;
+}
+.go-reveal{margin:0;color:var(--dim);font-size:clamp(13px,3.4vw,16px);letter-spacing:2px}
+.go-survivors{
+  list-style:none;margin:0;padding:0;display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+}
+.go-survivors li{
+  border:1px solid var(--line);border-radius:5px;padding:8px 14px;
+  color:var(--text);font-size:14px;background:rgba(255,255,255,.03);
+}
+@keyframes go-in{from{opacity:0}to{opacity:1}}
+@keyframes go-title{from{opacity:0;transform:scale(.82) translateY(10px)}to{opacity:1;transform:none}}
+
+.controls{padding:10px 12px;display:flex;gap:8px;flex-wrap:wrap;justify-content:center;align-items:center}
+.controls .mode{display:flex;gap:8px}
+.controls .mode .btn.active{border-color:var(--accent);color:#fff}
+
+/* Normal document flow: map -> question -> answers -> submit. Never overlaid. */
+.game-layout{display:flex;flex-direction:column;width:100%;min-width:0}
+
+.quiz{
+  padding:12px 12px 28px;display:flex;flex-direction:column;gap:12px;
+  width:100%;max-width:720px;margin:0 auto;min-width:0;
+}
+.q-text{margin:0;font-size:17px;line-height:1.5;overflow-wrap:anywhere}
+.choices{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.choices .btn{
+  text-align:left;font-size:15px;min-width:0;
+  white-space:normal;overflow-wrap:anywhere;line-height:1.4;
+}
+.choices .btn.selected{border-color:var(--accent);color:#fff}
+#q-submit{align-self:center;min-width:200px}
+
+@media (max-width:640px){
+  .choices{grid-template-columns:minmax(0,1fr)}
+}
+
+.blackout-veil{
+  position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;
+  transition:opacity 400ms ease;z-index:50;
+}
+body.blackout .blackout-veil{opacity:1;pointer-events:auto}
+
+.big-message{
+  position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+  text-align:center;padding:20px;font-size:clamp(24px,7vw,56px);letter-spacing:2px;
+  color:#fff;background:rgba(0,0,0,.7);animation:pop 220ms ease;
+}
+@keyframes pop{from{transform:scale(.8);opacity:0}to{transform:scale(1);opacity:1}}
