@@ -18,6 +18,7 @@ import { buildMap } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
 import { parseWorkbook } from './questions.js';
 import { blackoutTransition, playResultSequence } from './effects.js';
+import { openTutorial } from './tutorial.js';
 
 const $ = (id) => document.getElementById(id);
 const code = new URLSearchParams(location.search).get('room');
@@ -95,6 +96,8 @@ async function init() {
   for (const id of ['close-bar', 'close-lobby', 'close-over']) {
     $(id).addEventListener('click', closeRoom);
   }
+  // Local presentation only: it never touches Firebase or any game state.
+  $('tutorial-open').addEventListener('click', openTutorial);
 }
 
 /* ---------------- lobby ---------------- */

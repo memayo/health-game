@@ -1,0 +1,139 @@
+/* Host-only tutorial presentation. All selectors are tut-* prefixed so nothing
+   here can affect the real game UI. */
+
+.tut{
+  position:fixed;inset:0;z-index:80;display:flex;align-items:center;justify-content:center;
+  padding:16px;background:radial-gradient(ellipse at center,#141822 0%,#05070a 75%);
+  animation:tut-in 220ms ease both;
+}
+.tut.hidden{display:none !important}
+@keyframes tut-in{from{opacity:0}to{opacity:1}}
+
+.tut-box{
+  width:min(1100px,100%);max-height:100%;display:flex;flex-direction:column;
+  align-items:center;gap:14px;overflow:auto;
+}
+.tut-title{
+  margin:0;font-size:clamp(30px,7vw,72px);letter-spacing:.14em;text-indent:.14em;
+  color:#fff;line-height:1;
+}
+.tut-caption{
+  margin:0;color:var(--dim);font-size:clamp(14px,2.4vw,20px);
+  letter-spacing:1px;text-align:center;min-height:1.2em;
+}
+.tut-stage{
+  width:100%;display:flex;flex-direction:column;align-items:center;gap:14px;
+}
+
+.tut-nav{display:flex;gap:10px;align-items:center;flex-wrap:wrap;justify-content:center}
+.tut-count{color:var(--dim);letter-spacing:2px;min-width:64px;text-align:center;font-size:15px}
+.tut-arrow{padding:8px 18px;font-size:22px;line-height:1}
+.tut-mini{padding:8px 14px;font-size:13px}
+
+/* ---- demo map ---- */
+.tut-map{
+  /* Height-capped like the real board so the nav never falls below the fold. */
+  position:relative;width:min(720px,100%,calc(42vh * 1.5));aspect-ratio:3/2;
+  display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:repeat(2,1fr);
+  gap:14px;padding:10px;background:#07090d;border:1px solid var(--line);border-radius:8px;
+}
+.tut-room{
+  position:relative;border:2px solid #2b3446;border-radius:5px;background:#11151d;
+  transition:background 180ms ease,border-color 180ms ease,opacity 180ms ease;
+}
+.tut-room-label{position:absolute;top:5px;left:8px;font-size:13px;color:#46516a;letter-spacing:2px}
+.tut-pipe{position:absolute;top:8px;right:8px;width:16px;height:16px;border-radius:3px;
+  background:#2b3446;box-shadow:inset 0 0 0 2px #171d28}
+
+.tut-room[data-state="reachable"]{border-color:var(--accent);background:#12251b}
+.tut-room[data-state="blocked"]{opacity:.32}
+.tut-room[data-state="selectable"]{border-color:#5b6b88}
+.tut-room[data-state="chosen"]{border-color:var(--accent);background:#16301f}
+.tut-room[data-state="target"]{border-color:#facc15;background:#231f0d}
+.tut-room[data-state="lock"]{border-color:var(--danger);background:#2a1210}
+.tut-room[data-state="focus"]{border-color:#fff;background:#26202a;box-shadow:0 0 0 3px rgba(255,255,255,.12)}
+
+.tut-layer{position:absolute;inset:0;pointer-events:none}
+
+/* ---- demo characters ---- */
+.tut-char{position:absolute;top:0;left:0;will-change:transform;transition:opacity 200ms ease}
+.tut-char .sprite{image-rendering:pixelated}
+.tut-name{position:absolute;top:100%;left:50%;transform:translateX(-50%);
+  margin-top:2px;font-size:10px;color:var(--dim);white-space:nowrap}
+.tut-hit{animation:tut-hit 300ms steps(2) 2}
+@keyframes tut-hit{50%{filter:brightness(4)}}
+.tut-shield{
+  position:absolute;inset:-10px;border:3px solid var(--shield);border-radius:50%;
+  animation:tut-shield 900ms ease-out forwards;pointer-events:none;
+}
+@keyframes tut-shield{from{transform:scale(.6);opacity:1}to{transform:scale(1.5);opacity:0}}
+
+/* ---- fake cursor (never intercepts real input) ---- */
+.tut-cursor{
+  position:absolute;top:0;left:0;z-index:5;pointer-events:none;
+  filter:drop-shadow(0 2px 3px rgba(0,0,0,.6));transition:opacity 200ms ease;
+}
+.tut-cursor.clicking{animation:tut-click 220ms ease}
+@keyframes tut-click{50%{transform:scale(.78)}}
+.tut-click-ring{
+  position:absolute;left:2px;top:2px;width:26px;height:26px;margin:-13px 0 0 -13px;
+  border:2px solid #fff;border-radius:50%;animation:tut-ring 420ms ease-out forwards;
+}
+@keyframes tut-ring{from{transform:scale(.3);opacity:.9}to{transform:scale(1.9);opacity:0}}
+
+/* ---- demo effects ---- */
+.tut-fx{position:absolute;top:0;left:0;pointer-events:none}
+.tut-fx-emerge{width:34px;height:34px;border-radius:50%;border:3px solid #f87171;
+  animation:tut-emerge 700ms ease-out forwards}
+@keyframes tut-emerge{from{opacity:1;box-shadow:0 0 0 0 rgba(248,113,113,.8)}
+  to{opacity:0;box-shadow:0 0 0 30px rgba(248,113,113,0)}}
+.tut-fx-attack{width:80px;height:80px;
+  background:repeating-linear-gradient(45deg,rgba(239,68,68,.9) 0 7px,transparent 7px 16px);
+  animation:tut-slash 700ms steps(4) forwards}
+@keyframes tut-slash{to{opacity:0}}
+.tut-fx-pipe{width:30px;height:30px;border-radius:50%;border:3px dashed #7dd3fc;
+  animation:tut-pipe 900ms ease-out forwards}
+@keyframes tut-pipe{from{transform:scale(.4) rotate(0);opacity:1}
+  to{transform:scale(2) rotate(140deg);opacity:0}}
+
+/* ---- banners ---- */
+.tut-banner{
+  position:absolute;left:50%;bottom:12px;transform:translateX(-50%);
+  padding:8px 18px;border-radius:6px;background:rgba(5,7,10,.9);
+  border:1px solid var(--line);color:#fff;letter-spacing:3px;
+  font-size:clamp(14px,2.6vw,22px);white-space:nowrap;
+  animation:tut-pop 240ms ease both;
+}
+.tut-banner.good{border-color:var(--accent);color:var(--accent)}
+.tut-banner.bad{border-color:var(--danger);color:#fca5a5}
+.tut-banner.warn{border-color:#facc15;color:#fde68a}
+.tut-banner.target{border-color:#facc15;color:#facc15}
+@keyframes tut-pop{from{opacity:0;transform:translateX(-50%) translateY(8px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}}
+
+/* ---- page 1: survive ---- */
+.tut-survive{display:flex;flex-direction:column;align-items:center;gap:26px;padding:18px 0}
+.tut-rounds{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+.tut-pill{
+  min-width:64px;padding:14px 10px;border:2px solid var(--line);border-radius:6px;
+  color:var(--dim);letter-spacing:2px;font-size:clamp(12px,2vw,16px);
+  background:#11151d;transition:all 220ms ease;
+}
+.tut-pill[data-on="1"]{border-color:var(--accent);color:#fff;background:#12251b}
+.tut-pill[data-dead="1"]{border-color:var(--danger);color:#fca5a5;background:#2a1210;opacity:.6}
+.tut-outcome{
+  min-height:1.1em;font-size:clamp(26px,6vw,56px);letter-spacing:.08em;color:#fff;
+}
+.tut-outcome[data-kind="players"]{color:var(--accent);text-shadow:0 0 24px rgba(74,222,128,.3)}
+.tut-outcome[data-kind="hunter"]{color:var(--danger);text-shadow:0 0 24px rgba(239,68,68,.3)}
+
+/* ---- page 4: formula ---- */
+.tut-formula{display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center}
+.tut-term{
+  padding:8px 16px;border:2px solid var(--line);border-radius:6px;color:var(--dim);
+  letter-spacing:2px;font-size:clamp(13px,2.4vw,20px);transition:all 240ms ease;
+}
+.tut-term[data-on="1"]{border-color:var(--accent);color:#fff;background:#12251b}
+.tut-term-key[data-on="1"]{border-color:var(--shield);color:var(--shield);
+  background:#0d1e28;box-shadow:0 0 18px rgba(56,189,248,.25)}
+.tut-op{color:var(--dim);font-size:clamp(14px,2.6vw,22px)}
