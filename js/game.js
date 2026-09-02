@@ -108,7 +108,8 @@ function syncPositionsSubscription() {
   if (want && !positionsUnsub) {
     positionsUnsub = onValue(path('positions'),
       s => { positions = s.val() || {}; syncCharacters(); render(); },
-      () => {                       // read revoked (Hunter entering MOVE)
+      (err) => {                    // read revoked (Hunter entering MOVE)
+        console.warn('[positions] read ended:', err && err.code, '- phase', pub.phase);
         positionsUnsub = null;
         positions = {};
         syncCharacters();
@@ -156,7 +157,14 @@ function syncCharacters() {
   }
   for (const [id, p] of Object.entries(players)) {
     const room = positions[id] || null;
-    if (!chars.has(id)) chars.add(id, { kind: 'player', name: p.displayName || '', roomId: room });
+    if (!chars.has(id)) {
+      chars.add(id, { kind: 'player', name: p.displayName || '', roomId: room });
+    } else if (isHunter()) {
+      // The Hunter never plays the walk animation, so its sprites are simply kept
+      // in sync with the resolved positions - including when the positions
+      // snapshot arrives after the sprite was created.
+      chars.setRoom(id, room);
+    }
     chars.setEliminated(id, p.alive === false);
   }
   for (const id of [...chars.chars.keys()]) {
@@ -174,6 +182,7 @@ function render() {
   rendering = true;
   try {
     syncPositionsSubscription();    // Hunter gains/loses positions with the phase
+    syncCharacters();               // visibility is a pure function of current state
     const inGame = pub.phase && pub.phase !== PHASE.LOBBY;
     const over = pub.phase === PHASE.ENDED;
 
