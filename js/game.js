@@ -22,7 +22,7 @@ let uid = null;
 let me = {};
 let myRole = null;
 let players = {};
-let positions = {};      // readable by normal Players only; never by the Hunter
+let positions = {};      // Players always; the Hunter only during QUIZ/RESULT
 let pub = {};
 let myCard = null;       // my own question for this round
 let mapApi = null;
@@ -69,7 +69,7 @@ async function init() {
   onValue(path('players'), s => { players = s.val() || {}; me = players[uid] || {}; syncCharacters(); render(); });
   onValue(path('roles/' + uid), s => {
     myRole = s.val();
-    if (myRole === ROLE.PLAYER) watchPositions();
+    syncPositionsSubscription();
     syncCharacters(); render();
   });
   onValue(path('public'), s => { pub = s.val() || {}; render(); });
@@ -84,13 +84,41 @@ async function init() {
   $('q-submit').addEventListener('click', submitAnswer);
 }
 
-// The Hunter is never allowed to read positions, so never subscribe as Hunter.
-let watchingPositions = false;
-function watchPositions() {
-  if (watchingPositions) return;
-  watchingPositions = true;
-  onValue(path('positions'), s => { positions = s.val() || {}; syncCharacters(); render(); },
-    err => console.error('positions read denied', err));
+/**
+ * Positions subscription.
+ *
+ * Normal Players may always read them. The Hunter may read them only during QUIZ
+ * and RESULT - the rules deny it during MOVE, so the listener is attached and
+ * detached as the phase changes rather than left running.
+ */
+let positionsUnsub = null;
+
+function hunterMaySeePositions() {
+  return pub.phase === PHASE.QUIZ || pub.phase === PHASE.RESULT;
+}
+
+function wantPositions() {
+  if (myRole === ROLE.PLAYER) return true;
+  if (myRole === ROLE.HUNTER) return hunterMaySeePositions();
+  return false;
+}
+
+function syncPositionsSubscription() {
+  const want = wantPositions();
+  if (want && !positionsUnsub) {
+    positionsUnsub = onValue(path('positions'),
+      s => { positions = s.val() || {}; syncCharacters(); render(); },
+      () => {                       // read revoked (Hunter entering MOVE)
+        positionsUnsub = null;
+        positions = {};
+        syncCharacters();
+      });
+  } else if (!want && positionsUnsub) {
+    positionsUnsub();
+    positionsUnsub = null;
+    positions = {};                 // the Hunter keeps nothing between rounds
+    syncCharacters();
+  }
 }
 
 function goHome() {
@@ -104,6 +132,7 @@ async function leaveRoom() {
   if (leaving) return;
   leaving = true;
   stopCountdown();
+  if (positionsUnsub) { positionsUnsub(); positionsUnsub = null; }
   try {
     await remove(path('actions/moves/' + uid));
     await remove(path('actions/answers/' + uid));
@@ -115,9 +144,13 @@ async function leaveRoom() {
 
 /* ---------------- characters ---------------- */
 
-// The Hunter's map shows no Player sprites at all.
+/** Player sprites are hidden from the Hunter during MOVE, shown in QUIZ/RESULT. */
+function playerSpritesVisible() {
+  return !isHunter() || hunterMaySeePositions();
+}
+
 function syncCharacters() {
-  if (isHunter()) {
+  if (!playerSpritesVisible()) {
     for (const id of [...chars.chars.keys()]) if (id !== HUNTER_CHAR_ID) chars.remove(id);
     return;
   }
@@ -140,6 +173,7 @@ function render() {
   if (rendering) return;            // secondary guard; the recursion itself is gone
   rendering = true;
   try {
+    syncPositionsSubscription();    // Hunter gains/loses positions with the phase
     const inGame = pub.phase && pub.phase !== PHASE.LOBBY;
     const over = pub.phase === PHASE.ENDED;
 
@@ -192,7 +226,7 @@ function renderMove() {
   lastRenderedRound = null;
   chars.setHidden(HUNTER_CHAR_ID, true);
 
-  if (!isHunter()) {
+  if (playerSpritesVisible()) {
     for (const [id] of Object.entries(players)) {
       if (chars.has(id)) chars.setRoom(id, positions[id] || null);
     }

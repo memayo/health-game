@@ -128,7 +128,8 @@ rooms/{CODE}/
                moveResults, lockedRoom, result,
                gameOver, closed                    (read: any auth, write: host)
   players/{uid} displayName, connected, alive       (read: any auth - NO role/position)
-  positions/{uid} roomId                           (read: host + normal Players ONLY)
+  positions/{uid} roomId                           (read: host + Players always;
+                                                    Hunter only in quiz/result)
   roles/{uid}  'player' | 'hunter'                 (read: owner + host, write: host)
   questions/{uid} id, text, choices, timeLimit,
                deadline                            (read: owner + host, write: host)
@@ -154,6 +155,13 @@ State is live-only. There is no persistence, no reconnect and no saved match:
   read, so a **refresh never rejoins**; the client is sent back to Home.
 - A player leaving removes their own record; the Host leaving removes the whole room.
 - No localStorage is used anywhere.
+
+The Hunter sees no Player sprites during MOVE and must predict where Players go; once
+movement has resolved the Hunter sees resolved positions for QUIZ and RESULT, then loses
+them again at the next MOVE. This is enforced by the rules, not just the UI: the
+`positions` read is denied to the Hunter while `public/phase` is `move`, so the client
+attaches and detaches that listener as the phase changes. Move submissions, answers and
+answer keys stay hidden from the Hunter at all times.
 
 Roles do not exist until Start. On Start the Host picks exactly one Hunter at random
 (`assignRandomRoles`) and writes roles to `roles/{uid}`, which each client can read only

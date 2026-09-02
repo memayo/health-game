@@ -32,7 +32,7 @@
         },
 
         "positions": {
-          ".read": "auth != null && (root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid || root.child('rooms/' + $room + '/roles/' + auth.uid).val() === 'player')",
+          ".read": "auth != null && (root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid || root.child('rooms/' + $room + '/roles/' + auth.uid).val() === 'player' || (root.child('rooms/' + $room + '/roles/' + auth.uid).val() === 'hunter' && (root.child('rooms/' + $room + '/public/phase').val() === 'quiz' || root.child('rooms/' + $room + '/public/phase').val() === 'result')))",
           ".write": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
           "$uid": { ".validate": "newData.isString()" }
         },
