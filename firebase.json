@@ -8,6 +8,8 @@
       "firebase.json",
       "database.rules.json",
       "README.md",
+      ".git/**",
+      "**/.git/**",
       ".firebase/**",
       "**/.*",
       "**/node_modules/**"
