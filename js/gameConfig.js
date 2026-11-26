@@ -51,7 +51,9 @@ export const HUNTER_CHAR_ID = '__hunter__';
 export const SLOT_SPACING = 20;
 
 // ---- Match length (Host picks one in the lobby; 0 = no limit) ----
-export const MATCH_MINUTE_CHOICES = [0, 5, 10, 15, 20, 30];
+export const MATCH_MINUTE_CHOICES = [0, 3, 5, 10, 15, 20, 30];
+// Seconds to answer each question; 0 = each question's own Time Limit from the sheet.
+export const ANSWER_SECOND_CHOICES = [0, 10, 15, 20, 30];
 export const DEFAULT_MATCH_MINUTES = 10;
 // Fixed cost of a round that timers can't shrink: result sequence, blackout, network.
 export const ROUND_OVERHEAD_SECONDS = 8;

@@ -186,11 +186,12 @@ Hunter emerges as an anonymous sprite.
 
 ## Match length
 
-The Host picks a match length in the lobby (no limit, 5, 10, 15, 20, 30 minutes). With a
-length, rounds keep coming (the question deck cycles) at normal timers until
-`public/gameEndsAt` passes; the game then ends after the round that is playing (Players win
-if any are alive). The HUD clock shows the time left. With no limit it is one pass of the
-questions; the lobby shows an estimate (`fitMatchTiming`).
+The Host picks a match length in the lobby (no limit, 3, 5, 10, 15, 20, 30 minutes) and the
+time to answer each question (from the sheet, or 10 / 15 / 20 / 30 s for every question).
+Each question is asked once, in random order. The game ends when the questions run out or
+when `public/gameEndsAt` passes, whichever comes first; on the clock it ends after the round
+that is playing, so an answer is never cut short (Players win if any are alive). The HUD
+clock shows the time left, and the lobby estimates which will run out first.
 
 ## Leaderboard
 
@@ -201,19 +202,18 @@ by the smaller total answer time (`rankLeaderboard`).
 
 ## Rounds, timers and questions
 
-- **Game length**: with a match length the game runs until the clock ends it
-  (`public/totalRounds` = 0); with "no limit" it is one pass of the questions
-  (`getTotalRounds`: 13 questions -> 13 rounds).
+- **Game length**: one pass of the questions (`getTotalRounds`: 13 questions -> 13 rounds),
+  or less if the match clock runs out first.
 - **Winner** (`decideWinner`, checked after each result): no Players alive -> HUNTER WINS;
   final round (or the clock) with a Player alive -> PLAYERS WIN.
 - **MOVE** has one shared deadline (`MOVE_TIME_SECONDS`, default 12).
   No selection = no movement. The Hunter's target falls back to their hidden last
   room; the lock is never carried over and simply becomes `null`.
-- **QUIZ**: one question for everyone, deadline from the sheet's `Time Limit (sec)`,
-  falling back to `DEFAULT_QUIZ_TIME_SECONDS`. No answer before the deadline counts as wrong.
-- **Shared cycling deck** (`newQuestionDeck` / `drawQuestion`, `hostPrivate/deck`):
-  questions come in a random order without repeats; when all have been asked the deck is
-  reshuffled and goes round again (never opening with the question that just closed it).
+- **QUIZ**: one question for everyone, deadline from the Host's answer-time setting, else
+  the sheet's `Time Limit (sec)`, falling back to `DEFAULT_QUIZ_TIME_SECONDS`. No answer before the deadline counts as wrong.
+- **Shared deck** (`newQuestionDeck` / `drawQuestion`, `hostPrivate/deck`): questions come
+  in a random order without repeats. (`drawQuestion` can reshuffle and cycle, but the game
+  ends after one pass.)
   The round's question id is `hostPrivate/currentQuestion`.
 - **Deadlines are authoritative.** The Host stores them in game state and stamps every
   submission with `serverTimestamp()`; a submission written after its deadline is

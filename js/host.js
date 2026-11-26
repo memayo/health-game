@@ -8,7 +8,7 @@ import {
 import {
   PHASE, ROLE, TIMING, HUNTER_CHAR_ID,
   MOVE_TIME_SECONDS, DEFAULT_QUIZ_TIME_SECONDS, CLOSE_ROOM_GRACE_MS,
-  MATCH_MINUTE_CHOICES, DEFAULT_MATCH_MINUTES, ROUND_OVERHEAD_SECONDS,
+  MATCH_MINUTE_CHOICES, ANSWER_SECOND_CHOICES, DEFAULT_MATCH_MINUTES, ROUND_OVERHEAD_SECONDS,
   MIN_MOVE_SECONDS, MIN_QUIZ_SECONDS, PHASE_LABEL
 } from './gameConfig.js';
 import {
@@ -56,7 +56,7 @@ let serverOffset = 0;
 let deadlineTimer = null;
 let tickTimer = null;
 let closing = false;
-let settings = { minutes: DEFAULT_MATCH_MINUTES };   // hostPrivate/settings
+let settings = { minutes: DEFAULT_MATCH_MINUTES, answerSeconds: 0 };   // hostPrivate/settings
 let timing = null;         // hostPrivate/timing: {moveSeconds, quizScale}
 let stats = {};            // hostPrivate/stats: uid -> {correct, answered, timeMs}
 
@@ -142,15 +142,21 @@ async function init() {
 /* ---------------- match length ---------------- */
 
 function renderTimeChoices() {
-  const box = $('time-choices');
+  chipRow($('time-choices'), MATCH_MINUTE_CHOICES, settings.minutes,
+    m => (m ? m + ' นาที' : 'ไม่จำกัด'), m => ({ minutes: m }));
+  chipRow($('answer-choices'), ANSWER_SECOND_CHOICES, settings.answerSeconds || 0,
+    v => (v ? v + ' วิ' : 'ตามไฟล์'), v => ({ answerSeconds: v }));
+}
+
+function chipRow(box, values, current, label, patch) {
   box.innerHTML = '';
-  for (const m of MATCH_MINUTE_CHOICES) {
+  for (const v of values) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.className = 'chip' + (settings.minutes === m ? ' active' : '');
-    b.textContent = m ? m + ' นาที' : 'ไม่จำกัด';
+    b.className = 'chip' + (current === v ? ' active' : '');
+    b.textContent = label(v);
     b.addEventListener('click', async () => {
-      settings = { ...settings, minutes: m };
+      settings = { ...settings, ...patch(v) };
       renderTimeChoices();
       refreshStart();
       await set(path('hostPrivate/settings'), settings).catch(e => console.error(e));
@@ -159,21 +165,37 @@ function renderTimeChoices() {
   }
 }
 
+/** Seconds to answer one question, from the Host's setting or the sheet. */
+function answerSecondsFor(q) {
+  if (settings.answerSeconds) return settings.answerSeconds;
+  return Number(q && q.timeLimit) > 0 ? Number(q.timeLimit) : DEFAULT_QUIZ_TIME_SECONDS;
+}
+
 function currentFit() {
   return fitMatchTiming({
-    questions, minutes: settings.minutes, moveSeconds: MOVE_TIME_SECONDS,
+    questions: questions.map(q => ({ timeLimit: answerSecondsFor(q) })), minutes: 0, moveSeconds: MOVE_TIME_SECONDS,
     defaultQuizSeconds: DEFAULT_QUIZ_TIME_SECONDS, overheadSeconds: ROUND_OVERHEAD_SECONDS,
     minMove: MIN_MOVE_SECONDS, minQuiz: MIN_QUIZ_SECONDS
   });
 }
 
 function timingSummary() {
+  const secsList = questions.length ? questions.map(answerSecondsFor) : [settings.answerSeconds || DEFAULT_QUIZ_TIME_SECONDS];
+  const avg = Math.round(secsList.reduce((a, b) => a + b, 0) / secsList.length);
+  const answer = settings.answerSeconds ? 'ตอบข้อละ ' + settings.answerSeconds + ' วิ'
+    : 'ตอบข้อละ ' + (questions.length ? 'ตามไฟล์ (เฉลี่ย ' + avg + ' วิ)' : DEFAULT_QUIZ_TIME_SECONDS + ' วิ');
   if (settings.minutes) {
-    return 'เล่นไปเรื่อยๆ ' + settings.minutes + ' นาที คำถามสุ่มทีละข้อ ครบแล้วสุ่มวนซ้ำ';
+    const n = questions.length;
+    const slowMins = n ? Math.ceil(currentFit().estimateSeconds / 60) : null;
+    const which = !n ? ''
+      : slowMins <= settings.minutes ? ' · คำถามน่าจะหมดก่อน (ไม่เกิน ~' + slowMins + ' นาที)'
+      : ' · เวลาน่าจะหมดก่อนคำถามครบ';
+    return 'จบเมื่อครบ ' + settings.minutes + ' นาที หรือคำถามครบ' + (n ? ' ' + n + ' ข้อ' : 'ทุกข้อ')
+      + ' (อย่างไหนถึงก่อน)' + which + ' · ' + answer;
   }
-  if (!questions.length) return 'เล่นจนครบทุกข้อ';
+  if (!questions.length) return 'เล่นจนครบทุกข้อ · ' + answer;
   const mins = Math.ceil(currentFit().estimateSeconds / 60);
-  return 'เล่นจนครบ ' + questions.length + ' ข้อ (ประมาณ ' + mins + ' นาที)';
+  return 'เล่นจนครบ ' + questions.length + ' ข้อ (ไม่เกินประมาณ ' + mins + ' นาที) · ' + answer;
 }
 
 /* ---------------- lobby ---------------- */
@@ -254,7 +276,7 @@ async function startGame() {
   if (ids.length < 2 || !questions.length) { refreshStart(); return; }
   // Same question for everyone, normal timers. With a match length the game runs
   // until the clock ends it and the deck cycles; without one it is one pass.
-  timing = { moveSeconds: MOVE_TIME_SECONDS, quizScale: 1 };
+  timing = { moveSeconds: MOVE_TIME_SECONDS, quizScale: 1, answerSeconds: settings.answerSeconds || 0 };
 
   const roleMap = assignRandomRoles(ids);                       // one random Hunter
   const hunter = ids.find(id => roleMap[id] === ROLE.HUNTER);
@@ -282,7 +304,8 @@ async function startGame() {
   updates['actions'] = null;
   updates['questions'] = null;
   updates['public/round'] = 1;
-  updates['public/totalRounds'] = settings.minutes ? 0 : getTotalRounds(questions);
+  // Each question is asked once; the game ends when they run out or the clock does.
+  updates['public/totalRounds'] = getTotalRounds(questions);
   updates['public/gameOver'] = null;
   updates['public/question'] = null;
   updates['public/moveResults'] = null;
@@ -607,7 +630,7 @@ async function resolveMovePhase() {
   const q = questionById[drawn.id];
   updates['hostPrivate/deck'] = drawn.deck;
   updates['hostPrivate/currentQuestion'] = drawn.id;
-  const secs = quizSecondsFor(q, (timing && timing.quizScale) || 1,
+  const secs = (timing && timing.answerSeconds) || quizSecondsFor(q, (timing && timing.quizScale) || 1,
     DEFAULT_QUIZ_TIME_SECONDS, MIN_QUIZ_SECONDS);
   // Clear only the cards of users who are no longer active; nulling the whole
   // "questions" node here would collide with the per-uid writes below (Firebase
