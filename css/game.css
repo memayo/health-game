@@ -101,6 +101,3 @@ body.host .board{flex:1;display:flex;align-items:center;justify-content:center}
 
 /* Effects are drawn by pixelfx on the map canvas (see js/pixelStage.js). */
 .fx{position:absolute;top:0;left:0;pointer-events:none}
-/* The Hunter's memory of where a Player was last round */
-.character.ghost{opacity:.45;filter:grayscale(1) brightness(1.4)}
-.character.ghost .name-tag::after{content:" ?";color:#ff8a80}

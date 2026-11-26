@@ -214,14 +214,13 @@ function pageMove(host, say) {
 function pageHunter(host, say) {
   const d = demoMap(host);
   points(host, [
-    ['👻', 'ตอนเดิน Hunter มองไม่เห็นผู้กล้าตรงๆ เห็นแค่เงาจางๆ ว่ารอบที่แล้วใครอยู่ห้องไหน'],
+    ['👀', 'ทุกคนเห็นผู้กล้าทุกคนบนแผนที่ (Hunter ด้วย) แต่ไม่มีใครเห็นว่าใครกดเดินไปห้องไหน'],
     ['🎯', 'ห้องเป้าหมาย: เดาว่าผู้กล้าจะเดินไปห้องไหน แล้วเลือกห้องนั้น (เลือกได้ทุกห้อง)'],
     ['🔒', 'ปิดห้อง: ใครเดินเข้าห้องที่ปิด จะเดินไม่สำเร็จ = ไม่ได้โล่'],
     ['⚡', 'ครึ่งหลังของเกม Hunter โกรธ! เลือกห้องเป้าหมายได้ 2 ห้อง']
   ]);
   d.add('p1', 'มิ้นท์', 'B');
-  d.chars.setGhost('p1', true);
-  say('👻 Hunter เห็นเงา: รอบที่แล้วมิ้นท์อยู่ห้อง B');
+  say('👀 Hunter เห็นว่ามิ้นท์อยู่ห้อง B');
   runSteps([
     [TUT.read, () => { say('จาก B เดินไปได้แค่ A, C หรือ E → เดาเอา!'); for (const L of 'ACE') d.state(L, 'reachable'); }],
     [TUT.read, () => { d.clear(); for (const L of 'ABCDEF') d.state(L, 'selectable'); d.cursor.to('C'); }],
@@ -229,7 +228,7 @@ function pageHunter(host, say) {
     [TUT.read, () => d.cursor.to('E')],
     [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('E', 'lock'); say('🔒 ปิดห้อง E'); }],
     [TUT.read, () => {
-      d.cursor.hide(); d.clear(); d.chars.setGhost('p1', false);
+      d.cursor.hide(); d.clear();
       say('ฝั่งมิ้นท์ไม่รู้ว่า E ถูกปิด… แล้วเลือกเดินไป E'); d.state('E', 'chosen');
     }],
     [TUT.read, () => {

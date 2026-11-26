@@ -361,9 +361,8 @@ function syncCharacters() {
   }
 }
 
-/** Spawns stay hidden from the Host until the first movement has resolved. */
 function positionsRevealed() {
-  return !(pub.round === 1 && pub.phase === PHASE.MOVE);
+  return true;   // every Player is visible to everyone, spawns included
 }
 
 function renderBoard() {

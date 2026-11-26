@@ -1,4 +1,4 @@
-# Deploys the site to Firebase Hosting (https://healthgame-2b63b.web.app) on every
+# Deploys the site (and the database rules) to Firebase Hosting (https://healthgame-2b63b.web.app) on every
 # push to main, or by hand from the Actions tab ("Run workflow").
 # Needs one repository secret: FIREBASE_SERVICE_ACCOUNT_HEALTHGAME_2B63B
 # (the JSON key from Firebase Console -> Project settings -> Service accounts).
@@ -28,3 +28,12 @@ jobs:
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HEALTHGAME_2B63B }}
           channelId: live
           projectId: healthgame-2b63b
+      # Database security rules (database.rules.json) with the same service account.
+      - name: Deploy database rules
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_HEALTHGAME_2B63B }}
+        run: |
+          printf '%s' "$SA" > "$RUNNER_TEMP/sa.json"
+          export GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/sa.json"
+          npx --yes firebase-tools@13 deploy --only database --project healthgame-2b63b --non-interactive
+          rm -f "$RUNNER_TEMP/sa.json"

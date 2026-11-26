@@ -172,10 +172,12 @@ Hidden choices and correct answers are never in `public/`.
   the lobby when the Host presses Start are left out of the match.
 - No database rule changes were needed for any of this.
 
-The Hunter sees no live Player positions during MOVE and must predict where Players go;
-the Hunter's own client keeps where each Player was last seen (end of the previous round)
-and shows them as faded ghosts. Once movement has resolved the Hunter sees resolved
-positions for QUIZ and RESULT, then loses them again at the next MOVE.
+Everyone in the match (Host, Players and the Hunter) sees every Player's position at all
+times, spawns included: positions only change when a move resolves, so seeing them gives
+the Hunter where Players start from, not where they are going. What stays hidden is the
+move each Player submits, the Hunter's target and lock (the lock is revealed in QUIZ),
+answers and answer keys. The `positions` read rule allows the Host and anyone with a role;
+the deploy workflow publishes `database.rules.json` with the same service account.
 
 **Late game**: in the second half of the match (past half the rounds, or half the match
 clock, whichever comes first; `isLateGame`) `public/hunterTargets` becomes 2 and the Hunter

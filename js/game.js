@@ -35,8 +35,8 @@ let chars = null;
 let hunterMode = 'target';
 let myMove = null;
 let myHunter = { target: null, lock: null };
-// Hunter only: where the Players were when the Hunter last saw them (end of the
-// previous round). Shown as faded ghosts during MOVE so the Hunter can predict.
+// Hunter only: the last positions it received; a fallback if an older database
+// rule still hides positions from the Hunter during MOVE.
 let lastSeen = {};
 let myAnswer = null;
 let selectedChoice = null;
@@ -113,14 +113,9 @@ async function init() {
  */
 let positionsUnsub = null;
 
-function hunterMaySeePositions() {
-  return pub.phase === PHASE.QUIZ || pub.phase === PHASE.RESULT;
-}
-
+// Everyone in the match sees every Player, all the time (the Hunter included).
 function wantPositions() {
-  if (myRole === ROLE.PLAYER) return true;
-  if (myRole === ROLE.HUNTER) return hunterMaySeePositions();
-  return false;
+  return myRole === ROLE.PLAYER || myRole === ROLE.HUNTER;
 }
 
 function syncPositionsSubscription() {
@@ -132,16 +127,20 @@ function syncPositionsSubscription() {
         if (isHunter()) lastSeen = { ...positions };
         syncCharacters(); render();
       },
-      (err) => {                    // read revoked (Hunter entering MOVE)
+      (err) => {
+        // Older database rules still deny the Hunter during MOVE: fall back to
+        // the last positions it saw (identical, since positions only change
+        // when a move resolves).
         console.warn('[positions] read ended:', err && err.code, '- phase', pub.phase);
         positionsUnsub = null;
-        positions = {};
+        positions = isHunter() ? { ...lastSeen } : {};
         syncCharacters();
+        render();
       });
   } else if (!want && positionsUnsub) {
     positionsUnsub();
     positionsUnsub = null;
-    positions = {};                 // live positions are gone; only lastSeen ghosts remain
+    positions = {};
     syncCharacters();
   }
 }
@@ -171,28 +170,12 @@ async function leaveRoom() {
 
 /* ---------------- characters ---------------- */
 
-/** Player sprites are hidden from the Hunter during MOVE, shown in QUIZ/RESULT. */
+/** Every Player sprite is visible to everyone. */
 function playerSpritesVisible() {
-  return !isHunter() || hunterMaySeePositions();
+  return true;
 }
 
 function syncCharacters() {
-  if (!playerSpritesVisible()) {
-    // Hunter during MOVE: only faded ghosts where each Player was last seen.
-    for (const id of [...chars.chars.keys()]) {
-      if (id === HUNTER_CHAR_ID || id === '__hunter2__') continue;
-      const p = players[id];
-      if (!p || p.alive === false || !lastSeen[id] || isHunterSelf(id)) chars.remove(id);
-    }
-    for (const [id, p] of Object.entries(players)) {
-      if (p.alive === false || !lastSeen[id] || isHunterSelf(id)) continue;
-      if (!chars.has(id)) chars.add(id, { kind: 'player', name: p.displayName || '', roomId: lastSeen[id] });
-      else chars.setRoom(id, lastSeen[id]);
-      chars.setGhost(id, true);
-    }
-    return;
-  }
-  for (const id of chars.chars.keys()) chars.setGhost(id, false);
   for (const [id, p] of Object.entries(players)) {
     const room = positions[id] || null;
     if (!chars.has(id)) {
