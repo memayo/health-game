@@ -137,3 +137,78 @@
 .tut-term-key[data-on="1"]{border-color:var(--shield);color:var(--shield);
   background:#0d1e28;box-shadow:0 0 18px rgba(56,189,248,.25)}
 .tut-op{color:var(--dim);font-size:clamp(14px,2.6vw,22px)}
+
+/* ================= Dungeon pixel theme overrides ================= */
+.tut{background:radial-gradient(ellipse at center,#1d1428 0%,#07060a 75%)}
+.tut-title{
+  font-family:var(--font-pixel);font-weight:700;color:var(--gold);letter-spacing:.08em;text-indent:.08em;
+  text-shadow:4px 4px 0 var(--gold-dark),8px 8px 0 #07060a;
+}
+.tut-caption{font-family:var(--font-ui);color:var(--text)}
+.tut-count{font-family:var(--font-pixel);color:var(--gold)}
+
+.tut-map{
+  background:#07060a;border:0;border-radius:0;
+  box-shadow:0 0 0 4px #0b0910,0 0 0 6px #3a3346,0 0 0 8px #0b0910;
+}
+.tut-room{
+  border:0;border-radius:0;
+  /* flagstone floor under a brick back wall */
+  background:
+    linear-gradient(#120f17 0 2px,transparent 2px) 0 0/100% 100%,
+    repeating-linear-gradient(90deg,#3a3346 0 14px,#16131c 14px 16px) 0 4px/100% 8px no-repeat,
+    repeating-linear-gradient(90deg,#2e2838 0 14px,#16131c 14px 16px) 7px 13px/100% 8px no-repeat,
+    linear-gradient(#16131c 0 2px,transparent 2px) 0 20px/100% 4px no-repeat,
+    repeating-linear-gradient(#17141d 0 1px,transparent 1px 12px),
+    repeating-linear-gradient(90deg,#17141d 0 1px,transparent 1px 16px),
+    #28232f;
+  box-shadow:inset 0 0 0 2px #120f17,0 0 0 2px #07060a;
+}
+.tut-room::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 2px var(--st,transparent),inset 0 0 0 4px rgba(0,0,0,.35);
+  background:var(--st-fill,transparent);
+}
+.tut-room-label{
+  top:4px;left:50%;transform:translateX(-50%);font-family:var(--font-pixel);font-size:11px;line-height:1;
+  color:#f3d58a;background:#3a2c1c;padding:3px 5px 2px;box-shadow:0 0 0 1px #8a6a3a;letter-spacing:1px;
+}
+.tut-pipe{
+  border-radius:0;top:6px;right:10%;width:14px;height:12px;
+  background:repeating-linear-gradient(90deg,#4a4655 0 2px,#07060a 2px 4px);
+  box-shadow:0 0 0 2px #2a2732,0 -2px 0 2px #6e6a7a;
+}
+.tut-room[data-state="reachable"]{border-color:transparent;background-color:#28232f;--st:var(--accent);--st-fill:rgba(126,231,135,.14)}
+.tut-room[data-state="blocked"]{opacity:1;--st-fill:rgba(3,2,6,.6)}
+.tut-room[data-state="selectable"]{--st:#8f86a8}
+.tut-room[data-state="chosen"]{--st:var(--accent);--st-fill:rgba(126,231,135,.22)}
+.tut-room[data-state="target"]{--st:var(--gold);--st-fill:rgba(255,200,87,.16)}
+.tut-room[data-state="lock"]{--st:var(--danger);--st-fill:rgba(232,74,74,.2)}
+.tut-room[data-state="focus"]{--st:#fff;--st-fill:rgba(255,255,255,.06)}
+
+.tut-name{font-family:var(--font-ui);color:#f2ead7;background:rgba(12,10,17,.78);padding:1px 4px}
+.tut-shield{border-radius:50%;border-color:var(--gold);box-shadow:0 0 12px rgba(255,200,87,.5)}
+.tut-fx-emerge{border-color:#9a6ad0;border-style:dotted}
+.tut-fx-attack{
+  background:repeating-linear-gradient(60deg,rgba(255,138,42,.95) 0 5px,transparent 5px 14px);
+}
+.tut-fx-pipe{border-color:#9a6ad0}
+
+.tut-banner{
+  border:0;border-radius:0;font-family:var(--font-pixel);letter-spacing:2px;
+  background:#1d1925;box-shadow:inset 0 2px 0 #3a3346,inset 0 -3px 0 #07060a,0 0 0 2px #07060a;
+}
+.tut-banner.good{color:var(--accent);box-shadow:inset 0 2px 0 #3a3346,0 0 0 2px var(--accent)}
+.tut-banner.bad{color:#ff8a80;box-shadow:inset 0 2px 0 #3a3346,0 0 0 2px var(--danger)}
+.tut-banner.warn,.tut-banner.target{color:var(--gold);box-shadow:inset 0 2px 0 #3a3346,0 0 0 2px var(--gold)}
+
+.tut-pill,.tut-term{
+  border:0;border-radius:0;font-family:var(--font-pixel);
+  background:var(--stone-1);box-shadow:inset 0 2px 0 var(--stone-3),inset 0 -3px 0 var(--stone-0),0 0 0 2px var(--stone-0);
+}
+.tut-pill[data-on="1"],.tut-term[data-on="1"]{background:#1e3a22;color:#fff;box-shadow:inset 0 2px 0 #3d6a44,0 0 0 2px var(--accent)}
+.tut-pill[data-dead="1"]{background:#3a1414;color:#ff8a80;box-shadow:0 0 0 2px var(--danger)}
+.tut-term-key[data-on="1"]{background:#3a2c10;color:var(--gold);box-shadow:0 0 0 2px var(--gold),0 0 18px rgba(255,200,87,.3)}
+.tut-outcome{font-family:var(--font-pixel);font-weight:700}
+.tut-outcome[data-kind="players"]{color:var(--gold);text-shadow:4px 4px 0 var(--gold-dark)}
+.tut-outcome[data-kind="hunter"]{color:#ff6b5e;text-shadow:4px 4px 0 #6b1a1a}

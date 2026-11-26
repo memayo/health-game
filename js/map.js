@@ -2,6 +2,7 @@
 // Contains no game rules.
 
 import { SLOT_SPACING, TIMING } from './gameConfig.js';
+import { PixelStage } from './pixelStage.js';
 
 export const ROOMS = [
   { id: 'roomA', label: 'A', col: 0, row: 0 },
@@ -71,8 +72,35 @@ export function buildMap(stage) {
   camera.appendChild(world);
   stage.appendChild(camera);
 
+  // Pixel-art dungeon + live effects, drawn on canvases under/over the DOM.
+  const pixels = new PixelStage(world, () => ({
+    rooms: ROOMS.map(r => {
+      const el = roomEls[r.id];
+      const pipe = el.querySelector('.pipe');
+      return {
+        id: r.id, col: r.col, row: r.row,
+        x: el.offsetLeft, y: el.offsetTop, w: el.offsetWidth, h: el.offsetHeight,
+        grate: pipe ? {
+          x: el.offsetLeft + pipe.offsetLeft + pipe.offsetWidth / 2,
+          y: el.offsetTop + pipe.offsetTop + pipe.offsetHeight / 2
+        } : null
+      };
+    })
+  }));
+  pixels.mountFg(effectLayer);
+  const relayout = () => pixels.resize();
+  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(relayout).observe(world);
+  window.addEventListener('resize', relayout);
+  // A candle in each room, standing against the back wall away from the grate.
+  ROOMS.forEach((r, i) => {
+    pixels.addAmbient('fire/candle', r.id, { fx: 0.13, fy: 2.1, wall: true }, { seed: 11 + i * 7, light: 0.9 });
+  });
+
   const api = {
-    stage, camera, world, roomEls, characterLayer, effectLayer,
+    stage, camera, world, roomEls, characterLayer, effectLayer, pixels,
+
+    /** Game-pixel scale (CSS px per art pixel). Sprites use it to match the map. */
+    pixelScale() { return pixels.k; },
 
     /** Centre point of a room in world coordinates. */
     roomCenter(roomId) {
@@ -84,8 +112,11 @@ export function buildMap(stage) {
     /** Standing anchor for a character, offset by slot so sprites do not overlap. */
     characterAnchor(roomId, slotIndex = 0, slotCount = 1) {
       const c = api.roomCenter(roomId);
-      const spread = (slotIndex - (slotCount - 1) / 2) * SLOT_SPACING;
-      return { x: c.x + spread, y: c.y + 8 };
+      // Slots scale with the art so sprites keep the same relative spacing.
+      const spread = (slotIndex - (slotCount - 1) / 2) * SLOT_SPACING * (pixels.k / 2);
+      const el = roomEls[roomId];
+      // Stand on the floor below the back wall, not the room's geometric centre.
+      return { x: c.x + spread, y: c.y + (el ? el.offsetHeight * 0.2 : 8) };
     },
 
     /** Configurable pipe/vent spawn anchor used by the Hunter reveal. */
@@ -97,6 +128,14 @@ export function buildMap(stage) {
         x: el.offsetLeft + pipe.offsetLeft + pipe.offsetWidth / 2,
         y: el.offsetTop + pipe.offsetTop + pipe.offsetHeight / 2
       };
+    },
+
+    /** On the floor just below a room's grate: where the Hunter surfaces. */
+    pipeFloorAnchor(roomId) {
+      const p = api.pipeAnchor(roomId);
+      const el = roomEls[roomId];
+      if (!el) return p;
+      return { x: p.x - el.offsetWidth * 0.08, y: el.offsetTop + el.offsetHeight * 0.92 };
     },
 
     setRoomState(roomId, state) {

@@ -55,30 +55,17 @@ export const CHARACTER_ASSETS = {
   }
 };
 
-// Effect hooks. `sprite` may later become a spritesheet config like the above.
-//
-// playerElimination layers several square PNGs. Per sprite:
-//   src    - image path
-//   size   - rendered square size in px (sources are square, so never distorted)
-//   rotate - base rotation
-//   offset - nudge in fractions of `size`, to centre art that is off-centre
-//            inside its own canvas
-//   delay  - stagger in ms
+// Effect hooks: pixelfx effect ids (js/vendor/pixelfx/fx/<id>.js) plus options.
+// Recolor with `palette` (dark -> bright). One-shots end on their own; loops get `hold` ms.
 export const EFFECT_ASSETS = {
-  hunterEmerge: { sprite: null, className: 'fx-emerge' },
-  hunterAttack: { sprite: null, className: 'fx-attack' },
-  shield:       { sprite: null, className: 'fx-shield' },
-
-  playerElimination: {
-    className: 'fx-eliminate',
-    pixelated: true,          // these assets are hard-edged, 2 alpha levels
-    sprites: [
-      // 194x194, splatter fills the canvas -> already centred.
-      { src: 'assets/effects/VFX Blood Concepts FXOnly5.png',
-        size: 62, rotate: 0, offset: [0, 0], delay: 0 },
-      // 194x194, art occupies x 15-95 -> sits left of centre, nudge it back.
-      { src: 'assets/effects/VFX Blood Concepts FXOnly7.png',
-        size: 46, rotate: -18, offset: [0.216, 0.008], delay: 70 }
-    ]
-  }
+  // Violet smoke bursting out of the sewer grate.
+  hunterEmerge: { fx: 'spawn/poof', opts: {
+    palette: ['#0f0a18', '#1c1230', '#2c1a4a', '#432468', '#6b3a9a', '#9a6ad0'],
+    stars: ['#7ee787', '#c684ff', '#ecc8ff'], light: 0.7 } },
+  // Three burning claw marks across the room.
+  hunterAttack: { fx: 'melee/claw-swipe', opts: { light: 0.9 } },
+  // Gold bubble round a shielded Player.
+  shield:       { fx: 'holy/divine-shield', opts: { hold: 1400, radius: 20 } },
+  // The eliminated Player's soul rises and fades.
+  playerElimination: { fx: 'spawn/soul-rise', opts: { height: 34, dimBody: false } }
 };

@@ -7,6 +7,7 @@ import { db, ref, get, set, update, remove, onValue, onDisconnect, serverTimesta
 import { PHASE, ROLE, HUNTER_CHAR_ID } from './gameConfig.js';
 import { buildMap, ROOM_IDS, ADJACENCY } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
+import { showGameOverFx } from './pixelDecor.js';
 import { playResultSequence } from './effects.js';
 
 const $ = (id) => document.getElementById(id);
@@ -369,6 +370,7 @@ async function renderResult() {
 function renderGameOver() {
   const go = pub.gameOver || {};
   $('go-title').textContent = go.winner === ROLE.HUNTER ? 'HUNTER WINS' : 'PLAYERS WIN';
+  showGameOverFx($('go-fx'), go.winner === ROLE.HUNTER);
   $('go-reveal').textContent = go.hunterName ? 'Hunter: ' + go.hunterName : '';
   const ul = $('go-survivors');
   ul.innerHTML = '';

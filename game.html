@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="theme-color" content="#0c0a11">
 <title>Health Game</title>
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/game.css">
@@ -18,7 +19,11 @@
   </header>
 
   <section id="lobby" class="screen lobby">
-    <div id="lobby-code" class="lobby-code"></div>
+    <div class="home-title">
+      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":4,"light":0.6}'></div>
+      <div id="lobby-code" class="lobby-code"></div>
+      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":9,"light":0.6}'></div>
+    </div>
     <h1 class="lobby-title">LOBBY</h1>
     <ul id="player-list" class="lobby-players"></ul>
     <div class="lobby-actions">
@@ -42,6 +47,7 @@
 
   <section id="gameover" class="gameover hidden">
     <div class="go-inner">
+      <div id="go-fx" class="go-fx"></div>
       <h1 id="go-title" class="go-title"></h1>
       <p id="go-reveal" class="go-reveal"></p>
       <ul id="go-survivors" class="go-survivors"></ul>
@@ -50,5 +56,6 @@
   </section>
 
   <script type="module" src="js/game.js"></script>
+  <script type="module">import { mountDecor } from './js/pixelDecor.js'; mountDecor();</script>
 </body>
 </html>

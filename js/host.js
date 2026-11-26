@@ -16,6 +16,7 @@ import {
 } from './gameState.js';
 import { buildMap } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
+import { showGameOverFx } from './pixelDecor.js';
 import { parseWorkbook } from './questions.js';
 import { blackoutTransition, playResultSequence } from './effects.js';
 import { openTutorial } from './tutorial.js';
@@ -325,6 +326,7 @@ function renderGameOver() {
   clearTimers();
   const go = pub.gameOver || {};
   $('go-title').textContent = go.winner === ROLE.HUNTER ? 'HUNTER WINS' : 'PLAYERS WIN';
+  showGameOverFx($('go-fx'), go.winner === ROLE.HUNTER);
   $('go-reveal').textContent = go.hunterName ? 'Hunter: ' + go.hunterName : '';
   const ul = $('go-survivors');
   ul.innerHTML = '';

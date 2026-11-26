@@ -8,11 +8,10 @@ movement, checks answers, awards shields, eliminates players and publishes resul
 
 ## Firebase config
 
-1. Create a Firebase project with **Anonymous Authentication** and a **Realtime Database**.
-2. Copy `js/firebase-config.example.js` to `js/firebase-config.js`.
-3. Paste your own values (`apiKey`, `authDomain`, `databaseURL`, `projectId`, ...).
-
-`js/firebase-config.js` is gitignored and is never committed.
+`js/firebase-config.js` is committed (project `healthgame-2b63b`) so GitHub Pages can serve
+the game. A Firebase web config is not a secret; access is controlled by
+`database.rules.json` and Authentication. To point at another project, replace its values
+(see `js/firebase-config.example.js`).
 
 ## Run locally
 
@@ -58,6 +57,14 @@ Alternatives:
 Open three tabs/browsers: one Host, two Players.
 
 ## Deploy
+
+**GitHub Pages** (no computer needed): repo Settings -> Pages -> Source "Deploy from a branch",
+branch `main`, folder `/ (root)`. The site is then `https://memayo.github.io/health-game/`.
+`.nojekyll` must stay: without it Pages drops the effect helpers named `_lib.js`.
+If sign-in fails there, add `memayo.github.io` under Firebase Console -> Authentication ->
+Settings -> Authorized domains.
+
+**Firebase Hosting**:
 
 ```bash
 firebase deploy
@@ -199,6 +206,24 @@ Hunter emerges as an anonymous sprite.
 
 Shield (this turn only): successful move **and** correct answer.
 Attack: players in the target room survive with a shield, otherwise they are eliminated.
+
+## Art and effects (pixelfx)
+
+The look is a pixel-art dungeon drawn in code, no image files:
+
+- `js/dungeonArt.js` paints the rooms (brick back wall, flagstones, moss, bones, the sewer
+  grates the Hunter comes out of) and the corridors between adjacent rooms.
+- `js/pixelStage.js` puts that on a canvas under the rooms, runs ambient loops (a candle per
+  room) and plays one-shot effects on a second canvas above the characters. Everything shares
+  one integer pixel scale, so the sprites are scaled to match the map.
+- Effects come from [pixelfx](https://github.com/patch-gg/pixelfx) (MIT), vendored in
+  `js/vendor/pixelfx/` (core + the categories used). Which effect plays where is set in
+  `EFFECT_ASSETS` in `js/assetConfig.js`: grate smoke, claw marks, gold shield bubble, the
+  eliminated Player's soul rising (built from the Player sprite itself).
+- The Hunter is a live pixelfx creature (`critters/flying-skull`), set in
+  `js/characterRenderer.js`.
+- `js/pixelDecor.js` mounts decorative effects on plain pages: any element with
+  `data-pixelfx="fire/torch"` becomes a live sprite (home and lobby torches, game-over confetti).
 
 ## Assets
 

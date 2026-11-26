@@ -3,6 +3,10 @@
 import { SpriteAnimator, directionFromDelta } from './spriteAnimator.js';
 import { CHARACTER_ASSETS } from './assetConfig.js';
 import { TIMING } from './gameConfig.js';
+import { LiveSprite } from './pixelStage.js';
+
+// The Hunter is a live pixelfx creature instead of a spritesheet.
+const HUNTER_FX = { id: 'critters/flying-skull', box: [28, 46], opts: { seed: 3, light: 0.9 } };
 
 export class CharacterRenderer {
   constructor(mapApi) {
@@ -30,9 +34,19 @@ export class CharacterRenderer {
     wrap.className = 'character character-' + kind;
     wrap.dataset.charId = id;
 
-    const sprite = document.createElement('div');
-    sprite.className = 'sprite';
-    wrap.appendChild(sprite);
+    const k = this._scale();
+    let anim;
+    if (kind === 'hunter') {
+      const live = new LiveSprite(HUNTER_FX.id, { box: HUNTER_FX.box, opts: HUNTER_FX.opts, scale: k });
+      wrap.appendChild(live.el);
+      anim = { play() {}, setScale: (s) => live.setScale(s), destroy: () => live.destroy() };
+    } else {
+      const sprite = document.createElement('div');
+      sprite.className = 'sprite';
+      wrap.appendChild(sprite);
+      anim = new SpriteAnimator(sprite, CHARACTER_ASSETS[kind] || CHARACTER_ASSETS.player);
+      anim.setScale(k);
+    }
 
     const tag = document.createElement('div');
     tag.className = 'name-tag';
@@ -40,7 +54,6 @@ export class CharacterRenderer {
     wrap.appendChild(tag);
 
     this.map.characterLayer.appendChild(wrap);
-    const anim = new SpriteAnimator(sprite, CHARACTER_ASSETS[kind] || CHARACTER_ASSETS.player);
 
     const c = { el: wrap, anim, roomId, facing: 'down', kind, hidden, eliminated: false, hold: false };
     this.chars.set(id, c);
@@ -102,11 +115,19 @@ export class CharacterRenderer {
     return { x: feet.x, y: feet.y - (c.el.offsetHeight || 48) / 2 };
   }
 
+  /** Feet position of a character in world coordinates (for floor effects). */
+  feetOf(id) {
+    const c = this.chars.get(id);
+    if (!c || !c.roomId) return null;
+    return this._anchorOf(id, c.roomId);
+  }
+
   /** Teleport (used on join / reconnect / restore). */
   setRoom(id, roomId) {
     const c = this.chars.get(id);
     if (!c) return;
-    if (c.roomId === roomId) return;   // nothing moved: skip the relayout
+    if (c.roomId === roomId && !c.atPipe) return;   // nothing moved: skip the relayout
+    c.atPipe = false;
     c.roomId = roomId;
     this.layoutAll(true);
   }
@@ -116,7 +137,9 @@ export class CharacterRenderer {
     const c = this.chars.get(id);
     if (!c) return;
     c.roomId = roomId;
-    const p = this.map.pipeAnchor(roomId);
+    const p = this.map.pipeFloorAnchor ? this.map.pipeFloorAnchor(roomId) : this.map.pipeAnchor(roomId);
+    c.el.style.opacity = '';   // it may have been parked at opacity 0 while it had no room
+    c.atPipe = true;           // stays at the grate; slot layout leaves it alone
     this._apply(c, p, true);
   }
 
@@ -127,6 +150,7 @@ export class CharacterRenderer {
     if (!roomId || roomId === c.roomId) return Promise.resolve();
 
     const from = this._anchorOf(id, c.roomId);
+    c.atPipe = false;
     c.roomId = roomId;
     const to = this._anchorOf(id, roomId);
     const facing = directionFromDelta(to.x - from.x, to.y - from.y, c.facing);
@@ -154,7 +178,7 @@ export class CharacterRenderer {
 
   _occupants(roomId) {
     return [...this.chars.entries()]
-      .filter(([, c]) => c.roomId === roomId && !c.hidden && !c.eliminated)
+      .filter(([, c]) => c.roomId === roomId && !c.hidden && !c.eliminated && !c.atPipe)
       .map(([id]) => id)
       .sort();
   }
@@ -171,11 +195,19 @@ export class CharacterRenderer {
     c.el.style.transform = 'translate(' + pos.x + 'px,' + pos.y + 'px) translate(-50%,-100%)';
   }
 
+  /** CSS px per art pixel, shared with the dungeon map so every pixel is the same size. */
+  _scale() {
+    return (this.map.pixelScale && this.map.pixelScale()) || 2;
+  }
+
   /** Re-place everyone (resize, room changes, occupancy changes). */
   layoutAll(instant = true) {
+    if (this.map.pixels) this.map.pixels.resize();
+    const k = this._scale();
+    for (const c of this.chars.values()) if (c.anim.setScale) c.anim.setScale(k);
     for (const [id, c] of this.chars) {
       if (!c.roomId) { c.el.style.opacity = '0'; continue; }
-      if (c.el.classList.contains('walking')) continue;
+      if (c.el.classList.contains('walking') || c.atPipe) continue;
       c.el.style.opacity = '';
       this._apply(c, this._anchorOf(id, c.roomId), instant);
     }

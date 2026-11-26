@@ -8,7 +8,11 @@ body.host .board{flex:1;display:flex;align-items:center;justify-content:center}
   width:min(100%, 820px, calc(var(--map-max-h) * 1.5));
   aspect-ratio:3/2;
   margin:0 auto;
-  background:#07090d;border:1px solid var(--line);border-radius:6px;
+  background:#07060a;
+  /* chunky pixel frame */
+  border:4px solid #0b0910;
+  box-shadow:0 0 0 2px #3a3346,0 0 0 4px #0b0910,0 10px 30px rgba(0,0,0,.6);
+  image-rendering:pixelated;
 }
 .camera{position:absolute;inset:0;transform-origin:0 0;will-change:transform}
 .world{
@@ -17,35 +21,63 @@ body.host .board{flex:1;display:flex;align-items:center;justify-content:center}
   gap:14px;
 }
 
+/* Pixel canvases: dungeon behind, effects in front. */
+.pixel-canvas{position:absolute;left:0;top:0;image-rendering:pixelated;image-rendering:crisp-edges;pointer-events:none}
+.pixel-bg{z-index:0}
+
+/* Rooms are now transparent hit areas over the drawn dungeon; state = tinted overlay. */
 .room{
-  position:relative;border:2px solid #2b3446;border-radius:4px;
-  background:#11151d;transition:background 200ms ease,border-color 200ms ease;
+  position:relative;z-index:1;background:transparent;
+  transition:background-color 200ms steps(3),box-shadow 200ms steps(3);
 }
-.room-label{position:absolute;top:4px;left:6px;font-size:11px;color:#3f4a60;letter-spacing:2px}
-.room-floor{position:absolute;inset:18% 12% 12%;border-radius:3px;background:rgba(255,255,255,.02)}
+.room-label{
+  position:absolute;top:2px;left:50%;transform:translateX(-50%);
+  font-family:var(--font-pixel);font-size:10px;line-height:1;letter-spacing:1px;
+  color:#f3d58a;background:#3a2c1c;padding:3px 5px 2px;
+  box-shadow:0 0 0 1px #8a6a3a,0 2px 0 1px #120f17;
+  text-shadow:1px 1px 0 #120f17;
+}
+.room-floor{display:none}
+/* The pipe is now an invisible anchor; the grate is drawn by the dungeon art. */
 .pipe{
-  position:absolute;top:8px;right:8px;width:14px;height:14px;border-radius:2px;
-  background:#2b3446;box-shadow:inset 0 0 0 2px #171d28;
+  position:absolute;top:3%;right:12%;width:14px;height:14px;background:none;
 }
 
-.room[data-state="reachable"]{border-color:var(--accent);background:#12251b;cursor:pointer}
-.room[data-state="blocked"]{opacity:.35}
-.room[data-state="selectable"]{border-color:#5b6b88;cursor:pointer}
-.room[data-state="target"]{border-color:#facc15;background:#231f0d}
-.room[data-state="lock"]{border-color:var(--danger);background:#25100f}
-.room[data-state="target-lock"]{border-color:#f97316;background:#241408}
-.room[data-state="locked-reveal"]{border-color:var(--danger);background:#25100f}
-.room[data-state="chosen"]{border-color:var(--accent);background:#12251b}
+.room[data-state]:not([data-state=""])::after{
+  content:"";position:absolute;inset:0;pointer-events:none;
+  box-shadow:inset 0 0 0 2px var(--st, transparent),inset 0 0 0 4px rgba(0,0,0,.35);
+  background:var(--st-fill, transparent);
+}
+.room[data-state="reachable"]{--st:var(--accent);--st-fill:rgba(126,231,135,.12);cursor:pointer}
+.room[data-state="reachable"]::after{animation:roompulse 1s steps(2) infinite}
+.room[data-state="blocked"]{--st:transparent;--st-fill:rgba(3,2,6,.6)}
+.room[data-state="selectable"]{--st:#8f86a8;--st-fill:rgba(143,134,168,.08);cursor:pointer}
+.room[data-state="target"]{--st:var(--gold);--st-fill:rgba(255,200,87,.16)}
+.room[data-state="lock"]{--st:var(--danger);--st-fill:rgba(232,74,74,.18)}
+.room[data-state="target-lock"]{--st:#ff8a3d;--st-fill:rgba(255,138,61,.2)}
+.room[data-state="locked-reveal"]{--st:var(--danger);--st-fill:rgba(232,74,74,.22)}
+.room[data-state="locked-reveal"]::after{animation:roompulse 700ms steps(2) infinite}
+.room[data-state="chosen"]{--st:var(--accent);--st-fill:rgba(126,231,135,.2)}
+@keyframes roompulse{50%{background:transparent}}
 
 .layer{position:absolute;inset:0;pointer-events:none}
+.character-layer{z-index:2}
+.effect-layer{z-index:3}
 .character{position:absolute;top:0;left:0;will-change:transform}
 .character.hidden{display:none}
 .character.eliminated{filter:grayscale(1);opacity:.35}
 .character.hit{animation:hitflash 300ms steps(2) 2}
 @keyframes hitflash{50%{filter:brightness(4)}}
+/* drop shadow under every character */
+.character::before{
+  content:"";position:absolute;left:50%;bottom:-2px;width:60%;height:5px;
+  transform:translateX(-50%);background:rgba(0,0,0,.45);border-radius:50%;
+}
+.character-hunter::before{display:none}
 .name-tag{
   position:absolute;top:100%;left:50%;transform:translateX(-50%);
-  font-size:9px;color:var(--dim);white-space:nowrap;margin-top:2px;
+  font-family:var(--font-ui);font-size:10px;line-height:1.1;color:#f2ead7;white-space:nowrap;margin-top:3px;
+  background:rgba(12,10,17,.78);padding:1px 4px;box-shadow:0 0 0 1px #2e2838;
 }
 
 /* Real spritesheet frames */
@@ -67,40 +99,5 @@ body.host .board{flex:1;display:flex;align-items:center;justify-content:center}
 .character.walking .sprite-placeholder{animation:bob 240ms steps(2) infinite}
 @keyframes bob{50%{transform:translateY(-2px)}}
 
-/* Effects */
+/* Effects are drawn by pixelfx on the map canvas (see js/pixelStage.js). */
 .fx{position:absolute;top:0;left:0;pointer-events:none}
-.fx-emerge{
-  width:26px;height:26px;border-radius:50%;border:2px solid #f87171;
-  animation:emerge 600ms ease-out forwards;
-}
-@keyframes emerge{from{opacity:1;box-shadow:0 0 0 0 rgba(248,113,113,.8)}
-to{opacity:0;box-shadow:0 0 0 22px rgba(248,113,113,0)}}
-.fx-attack{
-  width:64px;height:64px;
-  background:repeating-linear-gradient(45deg,rgba(239,68,68,.9) 0 6px,transparent 6px 14px);
-  animation:slash 700ms steps(4) forwards;
-}
-@keyframes slash{to{opacity:0}}
-/* Player elimination: layered stencil sprites, square so never distorted. */
-.fx-eliminate{width:0;height:0;pointer-events:none}
-.fx-elim-sprite{
-  position:absolute;left:0;top:0;
-  width:var(--size);height:var(--size);
-  margin-left:calc(var(--size) / -2);margin-top:calc(var(--size) / -2);
-  translate:var(--dx) var(--dy);
-  background-repeat:no-repeat;background-size:100% 100%;
-  transform-origin:50% 50%;opacity:0;pointer-events:none;
-  animation:fx-elim var(--dur) ease-out both;
-}
-@keyframes fx-elim{
-  0%   {opacity:0;transform:scale(.45) rotate(var(--rot))}
-  20%  {opacity:1;transform:scale(1.05) rotate(var(--rot))}
-  55%  {opacity:.9;transform:scale(1.16) rotate(calc(var(--rot) + 5deg))}
-  100% {opacity:0;transform:scale(1.32) rotate(calc(var(--rot) + 10deg))}
-}
-
-.fx-shield{
-  position:absolute;inset:-8px;border:2px solid var(--shield);border-radius:50%;
-  animation:shieldpulse 700ms ease-out forwards;
-}
-@keyframes shieldpulse{from{transform:scale(.6);opacity:1}to{transform:scale(1.4);opacity:0}}

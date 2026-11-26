@@ -46,9 +46,8 @@ export class SpriteAnimator {
     this.frame = 0;
     this.timer = null;
     this.sheetSrc = null;
-
-    el.style.width = (config.frameWidth * config.scale) + 'px';
-    el.style.height = (config.frameHeight * config.scale) + 'px';
+    this.scale = config.scale;
+    this._size();
 
     const anims = config.animations || {};
     this.usesSheets = !!config.sheet || Object.values(anims).some(a => a && a.sheet);
@@ -61,6 +60,26 @@ export class SpriteAnimator {
       el.classList.add('sprite-placeholder');
     }
     this.play('idle_down');
+  }
+
+  _size() {
+    this.el.style.width = (this.config.frameWidth * this.scale) + 'px';
+    this.el.style.height = (this.config.frameHeight * this.scale) + 'px';
+  }
+
+  /** Change the on-screen pixel size (keeps art pixels square). */
+  setScale(scale) {
+    if (!scale || scale === this.scale) return;
+    this.scale = scale;
+    this._size();
+    if (this.sheetSrc) {
+      const src = this.sheetSrc;
+      loadSheetSize(src).then((dim) => {
+        if (!dim || this.sheetSrc !== src) return;
+        this.el.style.backgroundSize = (dim.w * this.scale) + 'px ' + (dim.h * this.scale) + 'px';
+        this._draw();
+      });
+    }
   }
 
   /** Which sheet does this animation draw from? */
@@ -99,7 +118,7 @@ export class SpriteAnimator {
     this.el.style.backgroundImage = 'url("' + toUrl(src) + '")';
     loadSheetSize(src).then((dim) => {
       if (!dim || this.sheetSrc !== src) return;
-      const s = this.config.scale;
+      const s = this.scale;
       this.el.style.backgroundSize = (dim.w * s) + 'px ' + (dim.h * s) + 'px';
       this._draw();
     });
@@ -109,8 +128,8 @@ export class SpriteAnimator {
     const c = this.config;
     const anim = c.animations[this.current];
     if (!anim || !this._sheetFor(this.current)) return;
-    const fw = c.frameWidth * c.scale;
-    const fh = c.frameHeight * c.scale;
+    const fw = c.frameWidth * this.scale;
+    const fh = c.frameHeight * this.scale;
     const col = (anim.startCol || 0) + this.frame;
     this.el.style.backgroundPosition = (-col * fw) + 'px ' + (-anim.row * fh) + 'px';
   }
