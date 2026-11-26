@@ -112,7 +112,7 @@ export function questionIdFor(assignment, uid, round) {
  */
 export function decideWinner({ alivePlayerCount, round, totalRounds }) {
   if (alivePlayerCount === 0) return ROLE.HUNTER;
-  if (round >= totalRounds) return 'players';
+  if (totalRounds && round >= totalRounds) return 'players';   // 0/null = until the clock ends it
   return null;
 }
 
@@ -226,4 +226,26 @@ export function rankLeaderboard(stats, who) {
 /** Is the match clock over? A missing deadline means no limit. */
 export function matchTimeUp(endsAt, now) {
   return !!endsAt && now >= endsAt;
+}
+
+/**
+ * Shared question deck: everyone gets the same question each round. The deck is
+ * a random order; when it runs out it is reshuffled and goes round again (never
+ * starting the new cycle with the question that just ended the old one).
+ * @returns {{order:string[], pos:number, cycle:number}}
+ */
+export function newQuestionDeck(questionIds) {
+  return { order: shuffled(questionIds), pos: 0, cycle: 1 };
+}
+
+/** Draw the next question id. Pure: returns the id and the advanced deck. */
+export function drawQuestion(deck, questionIds) {
+  let d = deck && Array.isArray(deck.order) && deck.order.length ? deck : newQuestionDeck(questionIds);
+  if (d.pos >= d.order.length) {
+    const last = d.order[d.order.length - 1];
+    let order = shuffled(questionIds);
+    if (order.length > 1 && order[0] === last) order = order.slice(1).concat(order[0]);
+    d = { order, pos: 0, cycle: (d.cycle || 1) + 1 };
+  }
+  return { id: d.order[d.pos], deck: { ...d, pos: d.pos + 1 } };
 }

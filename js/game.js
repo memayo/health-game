@@ -206,7 +206,7 @@ function render() {
     $('board').classList.toggle('hidden', !inGame || over);
     $('gameover').classList.toggle('hidden', !over);
     $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
-    $('round').textContent = pub.totalRounds ? 'รอบ ' + (pub.round || 1) + '/' + pub.totalRounds : '';
+    $('round').textContent = pub.round ? 'รอบ ' + pub.round + (pub.totalRounds ? '/' + pub.totalRounds : '') : '';
     $('host-away').classList.toggle('hidden', !(inGame && !over && pub.hostOnline === false));
     renderRoleBadge(inGame && !over);
 

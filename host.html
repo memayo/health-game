@@ -52,9 +52,16 @@
     </div>
   </section>
 
-  <section id="board" class="board hidden">
-    <div id="stage"></div>
-  </section>
+  <div class="host-layout">
+    <section id="board" class="board hidden">
+      <div id="stage"></div>
+    </section>
+    <section id="host-quiz" class="host-quiz hidden">
+      <div class="hq-head"><span class="hq-label">คำถามรอบนี้</span><span id="hq-count" class="hq-count"></span></div>
+      <p id="hq-text" class="hq-text"></p>
+      <ol id="hq-choices" class="hq-choices"></ol>
+    </section>
+  </div>
 
   <section id="gameover" class="gameover hidden">
     <div class="go-inner">

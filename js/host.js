@@ -12,7 +12,7 @@ import {
   MIN_MOVE_SECONDS, MIN_QUIZ_SECONDS, PHASE_LABEL
 } from './gameConfig.js';
 import {
-  assignRandomStartingRooms, assignRandomRoles, assignQuestionDecks, questionIdFor,
+  assignRandomStartingRooms, assignRandomRoles, newQuestionDeck, drawQuestion,
   getTotalRounds, getRandomRoom, decideWinner,
   resolveMove, isCorrect, earnsShield, resolveAttackFor,
   fitMatchTiming, quizSecondsFor, rankLeaderboard, matchTimeUp
@@ -40,7 +40,8 @@ let players = {};
 let roles = {};
 let positions = {};        // uid -> roomId (host + normal players may read)
 let turnState = {};        // hostPrivate/turn: shield + movementSuccess per uid
-let assignment = null;     // hostPrivate/deck: {master, offsets}
+let deck = null;           // hostPrivate/deck: shared {order, pos, cycle}
+let currentQid = null;     // hostPrivate/currentQuestion: this round's question for everyone
 let hunterRoom = null;     // hidden fallback room for the Hunter
 let pub = {};
 let actions = {};
@@ -112,7 +113,7 @@ async function init() {
   onValue(path('players'), s => { players = s.val() || {}; onPlayers(); });
   onValue(path('roles'), s => { roles = s.val() || {}; onPlayers(); });
   onValue(path('positions'), s => { positions = s.val() || {}; syncCharacters(); renderBoard(); });
-  onValue(path('actions'), s => { actions = s.val() || {}; tick(); });
+  onValue(path('actions'), s => { actions = s.val() || {}; renderAnsweredCount(); tick(); });
   onValue(path('questions'), s => {
     quizCards = s.val() || {};
     startCountdown();          // per-player deadlines may extend the phase timer
@@ -120,7 +121,8 @@ async function init() {
     tick();
   });
   onValue(path('hostPrivate/turn'), s => { turnState = s.val() || {}; });
-  onValue(path('hostPrivate/deck'), s => { assignment = s.val(); });
+  onValue(path('hostPrivate/deck'), s => { deck = s.val(); });
+  onValue(path('hostPrivate/currentQuestion'), s => { currentQid = s.val(); renderHostQuestion(); });
   onValue(path('hostPrivate/hunterRoom'), s => { hunterRoom = s.val(); });
   onValue(path('hostPrivate/timing'), s => { timing = s.val(); });
   onValue(path('hostPrivate/stats'), s => { stats = s.val() || {}; });
@@ -166,13 +168,12 @@ function currentFit() {
 }
 
 function timingSummary() {
-  if (!questions.length) return '';
-  const f = currentFit();
-  const mins = Math.ceil(f.estimateSeconds / 60);
-  if (!settings.minutes) return 'เล่นครบทุกข้อ ประมาณ ' + mins + ' นาที';
-  if (!f.fits) return '⚠ ' + questions.length + ' ข้อ ใช้เวลาไม่ต่ำกว่า ' + mins + ' นาที — หมดเวลาแล้วจะจบเกมทันที';
-  if (f.quizScale < 1) return 'ย่อเวลา: เดิน ' + f.moveSeconds + ' วิ, ตอบ ×' + f.quizScale.toFixed(2) + ' ให้จบใน ' + settings.minutes + ' นาที';
-  return 'จบได้ภายใน ' + settings.minutes + ' นาที (ประมาณ ' + mins + ' นาที)';
+  if (settings.minutes) {
+    return 'เล่นไปเรื่อยๆ ' + settings.minutes + ' นาที คำถามสุ่มทีละข้อ ครบแล้วสุ่มวนซ้ำ';
+  }
+  if (!questions.length) return 'เล่นจนครบทุกข้อ';
+  const mins = Math.ceil(currentFit().estimateSeconds / 60);
+  return 'เล่นจนครบ ' + questions.length + ' ข้อ (ประมาณ ' + mins + ' นาที)';
 }
 
 /* ---------------- lobby ---------------- */
@@ -251,14 +252,14 @@ async function startGame() {
   // Players who dropped out of the lobby are left behind.
   const ids = Object.keys(players).filter(id => players[id].connected !== false);
   if (ids.length < 2 || !questions.length) { refreshStart(); return; }
-  const fit = currentFit();
-  timing = { moveSeconds: fit.moveSeconds, quizScale: fit.quizScale };
+  // Same question for everyone, normal timers. With a match length the game runs
+  // until the clock ends it and the deck cycles; without one it is one pass.
+  timing = { moveSeconds: MOVE_TIME_SECONDS, quizScale: 1 };
 
   const roleMap = assignRandomRoles(ids);                       // one random Hunter
   const hunter = ids.find(id => roleMap[id] === ROLE.HUNTER);
   const normals = ids.filter(id => id !== hunter);
   const spawns = assignRandomStartingRooms(normals);            // random, may collide
-  const deck = assignQuestionDecks(ids, questions.map(q => q.id));
 
   const updates = {};
   for (const id of Object.keys(players)) {
@@ -275,12 +276,13 @@ async function startGame() {
     updates['hostPrivate/turn/' + id] = { shield: false, movementSuccess: false };
     updates['positions/' + id] = id === hunter ? null : spawns[id];
   }
-  updates['hostPrivate/deck'] = deck;
+  updates['hostPrivate/deck'] = newQuestionDeck(questions.map(q => q.id));
+  updates['hostPrivate/currentQuestion'] = null;
   updates['hostPrivate/hunterRoom'] = getRandomRoom();   // hidden Hunter fallback
   updates['actions'] = null;
   updates['questions'] = null;
   updates['public/round'] = 1;
-  updates['public/totalRounds'] = getTotalRounds(questions);
+  updates['public/totalRounds'] = settings.minutes ? 0 : getTotalRounds(questions);
   updates['public/gameOver'] = null;
   updates['public/question'] = null;
   updates['public/moveResults'] = null;
@@ -356,9 +358,10 @@ function onPublic() {
   $('board').classList.toggle('hidden', !inGame || over);
   $('gameover').classList.toggle('hidden', !over);
   $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
-  $('round').textContent = pub.totalRounds ? 'รอบ ' + (pub.round || 1) + '/' + pub.totalRounds : '';
+  $('round').textContent = pub.round ? 'รอบ ' + pub.round + (pub.totalRounds ? '/' + pub.totalRounds : '') : '';
   if (!inGame) refreshStart();
 
+  renderHostQuestion();
   if (pub.phase === PHASE.MOVE) enterMove();
   else if (pub.phase === PHASE.QUIZ) enterQuiz();
   else if (pub.phase === PHASE.RESULT) enterResult();
@@ -367,6 +370,53 @@ function onPublic() {
   startCountdown();
   scheduleDeadlineCheck();
   tick();
+}
+
+/* ---------------- question on the Host screen ---------------- */
+
+const LETTERS = ['A', 'B', 'C', 'D'];
+
+/** The round's question, big, for the room to read. Correct answer only in RESULT. */
+function renderHostQuestion() {
+  const box = $('host-quiz');
+  if (!box) return;
+  const show = (pub.phase === PHASE.QUIZ || pub.phase === PHASE.RESULT) && currentQid && questionById[currentQid];
+  box.classList.toggle('hidden', !show);
+  if (!show) return;
+  const q = questionById[currentQid];
+  const reveal = pub.phase === PHASE.RESULT;
+  if (box.dataset.qid !== currentQid + ':' + pub.round) {
+    box.dataset.qid = currentQid + ':' + pub.round;
+    $('hq-text').textContent = q.text;
+    const ol = $('hq-choices');
+    ol.innerHTML = '';
+    (q.choices || []).forEach((text, i) => {
+      const li = document.createElement('li');
+      li.dataset.letter = LETTERS[i];
+      const tag = document.createElement('span');
+      tag.className = 'hq-letter';
+      tag.textContent = LETTERS[i];
+      const t = document.createElement('span');
+      t.textContent = text;
+      li.append(tag, t);
+      ol.appendChild(li);
+    });
+  }
+  const correct = Array.isArray(q.correct) ? q.correct : [q.correct];
+  for (const li of $('hq-choices').children) {
+    li.classList.toggle('correct', reveal && correct.map(String).includes(li.dataset.letter));
+  }
+  box.classList.toggle('revealed', reveal);
+  renderAnsweredCount();
+}
+
+function renderAnsweredCount() {
+  const el = $('hq-count');
+  if (!el) return;
+  const need = activeIds();
+  const ans = actions.answers || {};
+  const n = need.filter(id => ans[id] && ans[id].choice).length;
+  el.textContent = pub.phase === PHASE.RESULT ? 'เฉลย' : 'ตอบแล้ว ' + n + '/' + need.length;
 }
 
 function enterMove() {
@@ -550,9 +600,15 @@ async function resolveMovePhase() {
     updates['hostPrivate/turn/' + id + '/movementSuccess'] = r.success;
   }
 
-  // Individual questions for this round.
-  const round = pub.round || 1;
+  // One question for everyone this round, drawn from the shared cycling deck.
   const quizStartedAt = serverNow();
+  const allIds = questions.map(q => q.id);
+  const drawn = drawQuestion(deck, allIds);
+  const q = questionById[drawn.id];
+  updates['hostPrivate/deck'] = drawn.deck;
+  updates['hostPrivate/currentQuestion'] = drawn.id;
+  const secs = quizSecondsFor(q, (timing && timing.quizScale) || 1,
+    DEFAULT_QUIZ_TIME_SECONDS, MIN_QUIZ_SECONDS);
   // Clear only the cards of users who are no longer active; nulling the whole
   // "questions" node here would collide with the per-uid writes below (Firebase
   // rejects an update containing both a path and its descendant).
@@ -561,10 +617,7 @@ async function resolveMovePhase() {
     if (!active.has(id)) updates['questions/' + id] = null;
   }
   for (const id of active) {
-    const q = questionById[questionIdFor(assignment, id, round)];
     if (!q) continue;
-    const secs = quizSecondsFor(q, (timing && timing.quizScale) || 1,
-      DEFAULT_QUIZ_TIME_SECONDS, MIN_QUIZ_SECONDS);
     updates['questions/' + id] = {
       id: q.id, text: q.text, choices: q.choices,
       timeLimit: secs, deadline: quizStartedAt + secs * 1000
@@ -587,9 +640,10 @@ async function resolveQuizPhase() {
   const hunter = hunterUid();
   const targetSnap = await get(path('hostPrivate/hunterTarget'));
   const hunterTarget = targetSnap.val() || null;
+  const qid = (await get(path('hostPrivate/currentQuestion'))).val();
+  const q = questionById[qid];
 
   const correctFor = (id) => {
-    const q = questionById[questionIdFor(assignment, id, round)];
     const card = quizCards[id];
     const a = answers[id];
     if (!q || !a || !inTime(a, card && card.deadline)) return false;  // timeout = wrong

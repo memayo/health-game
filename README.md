@@ -121,9 +121,10 @@ points to a non-empty answer.
 - The Host shows a short summary (`13 questions`, plus `/ N skipped` when applicable).
   The console carries the detail: detected format, header row number, and each skip reason.
 
-Each participant gets their own randomized sequence (see Rounds below). Correct answers
-live only in `hostPrivate/`, readable by the Host alone; a client receives only its own
-`questions/{uid}` card with `id`, `text`, `choices`, `timeLimit` and `deadline`.
+Everyone answers the same question each round (see Rounds below); the Host screen shows it
+too and reveals the answer during RESULT. Correct answers live only in `hostPrivate/`,
+readable by the Host alone; a client receives only its own `questions/{uid}` card with
+`id`, `text`, `choices`, `timeLimit` and `deadline`.
 
 ## Realtime Database layout
 
@@ -185,12 +186,11 @@ Hunter emerges as an anonymous sprite.
 
 ## Match length
 
-The Host picks a match length in the lobby (no limit, 5, 10, 15, 20, 30 minutes). On Start
-every question is still used: `fitMatchTiming` (in `gameState.js`) shortens the move time and
-scales each question's own time limit so that rounds x (move + quiz + ~8 s of animation)
-fits the length, never below 5 s to move and 7 s to answer. The Host shows the estimate; if
-even the floors don't fit it warns. `public/gameEndsAt` drives the HUD clock, and when it
-passes the game ends after the round that is playing (Players win if any are alive).
+The Host picks a match length in the lobby (no limit, 5, 10, 15, 20, 30 minutes). With a
+length, rounds keep coming (the question deck cycles) at normal timers until
+`public/gameEndsAt` passes; the game then ends after the round that is playing (Players win
+if any are alive). The HUD clock shows the time left. With no limit it is one pass of the
+questions; the lobby shows an estimate (`fitMatchTiming`).
 
 ## Leaderboard
 
@@ -201,18 +201,20 @@ by the smaller total answer time (`rankLeaderboard`).
 
 ## Rounds, timers and questions
 
-- **Game length = number of imported questions** (`getTotalRounds`). 13 questions -> 13 rounds.
+- **Game length**: with a match length the game runs until the clock ends it
+  (`public/totalRounds` = 0); with "no limit" it is one pass of the questions
+  (`getTotalRounds`: 13 questions -> 13 rounds).
 - **Winner** (`decideWinner`, checked after each result): no Players alive -> HUNTER WINS;
-  final round finished with a Player alive -> PLAYERS WIN.
+  final round (or the clock) with a Player alive -> PLAYERS WIN.
 - **MOVE** has one shared deadline (`MOVE_TIME_SECONDS`, default 12).
   No selection = no movement. The Hunter's target falls back to their hidden last
   room; the lock is never carried over and simply becomes `null`.
-- **QUIZ** is per participant: each gets their own question and their own deadline
-  from the sheet's `Time Limit (sec)`, falling back to `DEFAULT_QUIZ_TIME_SECONDS`.
-  No answer before the deadline counts as wrong.
-- **Individual decks**: one shared random permutation plus a distinct random offset
-  per participant (`assignQuestionDecks`). Nobody repeats a question, and while
-  participants <= questions nobody shares a question in the same round.
+- **QUIZ**: one question for everyone, deadline from the sheet's `Time Limit (sec)`,
+  falling back to `DEFAULT_QUIZ_TIME_SECONDS`. No answer before the deadline counts as wrong.
+- **Shared cycling deck** (`newQuestionDeck` / `drawQuestion`, `hostPrivate/deck`):
+  questions come in a random order without repeats; when all have been asked the deck is
+  reshuffled and goes round again (never opening with the question that just closed it).
+  The round's question id is `hostPrivate/currentQuestion`.
 - **Deadlines are authoritative.** The Host stores them in game state and stamps every
   submission with `serverTimestamp()`; a submission written after its deadline is
   ignored. Client countdowns are display only.
