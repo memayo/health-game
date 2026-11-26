@@ -164,3 +164,66 @@ export function shouldEndGame(gameState) {
     totalRounds: gameState.totalRounds
   }) !== null;
 }
+
+/**
+ * Fit every question into a match length by shortening the move and quiz timers.
+ * Pure. Returns the move time and a multiplier for each question's own time limit,
+ * never below the floors. `fits` is false when even the floors can't make it; the
+ * match clock then ends the game after the round that is playing.
+ * @param {{questions:Array<{timeLimit?:number}>, minutes:number, moveSeconds:number,
+ *          defaultQuizSeconds:number, overheadSeconds:number, minMove:number, minQuiz:number}} o
+ */
+export function fitMatchTiming(o) {
+  const n = (o.questions || []).length;
+  const quizOf = (q) => (Number(q.timeLimit) > 0 ? Number(q.timeLimit) : o.defaultQuizSeconds);
+  const quizTotal = (o.questions || []).reduce((s, q) => s + quizOf(q), 0);
+  const natural = n * (o.moveSeconds + o.overheadSeconds) + quizTotal;
+  if (!o.minutes || !n) {
+    return { moveSeconds: o.moveSeconds, quizScale: 1, fits: true, estimateSeconds: natural };
+  }
+  const budget = o.minutes * 60;
+  const playable = budget - n * o.overheadSeconds;          // seconds left for timers
+  const want = n * o.moveSeconds + quizTotal;
+  const s = Math.min(1, Math.max(0, playable / want));
+  const moveSeconds = Math.max(o.minMove, Math.round(o.moveSeconds * s));
+  const quizSecs = (q) => Math.max(o.minQuiz, Math.round(quizOf(q) * s));
+  const estimateSeconds = n * (moveSeconds + o.overheadSeconds)
+    + (o.questions || []).reduce((t, q) => t + quizSecs(q), 0);
+  return { moveSeconds, quizScale: s, fits: estimateSeconds <= budget, estimateSeconds };
+}
+
+/** One question's quiz seconds after fitting. */
+export function quizSecondsFor(q, quizScale, defaultQuizSeconds, minQuiz) {
+  const base = Number(q && q.timeLimit) > 0 ? Number(q.timeLimit) : defaultQuizSeconds;
+  if (quizScale >= 1) return base;
+  return Math.max(minQuiz, Math.round(base * quizScale));
+}
+
+/**
+ * Leaderboard: most correct answers first; ties go to the smaller total answer
+ * time (an unanswered question counts its full time limit). Pure.
+ * @param {Object<string,{correct:number,timeMs:number,answered:number}>} stats
+ * @param {Object<string,{name:string,role:string,alive:boolean}>} who
+ */
+export function rankLeaderboard(stats, who) {
+  return Object.keys(who)
+    .map(id => {
+      const s = (stats || {})[id] || {};
+      return {
+        uid: id,
+        name: who[id].name || '?',
+        role: who[id].role || null,
+        alive: who[id].alive !== false,
+        correct: s.correct || 0,
+        answered: s.answered || 0,
+        timeMs: Math.round(s.timeMs || 0)
+      };
+    })
+    .sort((a, b) => (b.correct - a.correct) || (a.timeMs - b.timeMs) || a.name.localeCompare(b.name))
+    .map((e, i) => ({ ...e, rank: i + 1 }));
+}
+
+/** Is the match clock over? A missing deadline means no limit. */
+export function matchTimeUp(endsAt, now) {
+  return !!endsAt && now >= endsAt;
+}

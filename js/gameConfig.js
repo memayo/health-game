@@ -49,3 +49,20 @@ export const HUNTER_CHAR_ID = '__hunter__';
 
 // Character slot spacing inside a room (px, world units)
 export const SLOT_SPACING = 20;
+
+// ---- Match length (Host picks one in the lobby; 0 = no limit) ----
+export const MATCH_MINUTE_CHOICES = [0, 5, 10, 15, 20, 30];
+export const DEFAULT_MATCH_MINUTES = 10;
+// Fixed cost of a round that timers can't shrink: result sequence, blackout, network.
+export const ROUND_OVERHEAD_SECONDS = 8;
+// Floors when timers are shortened to fit the match length.
+export const MIN_MOVE_SECONDS = 5;
+export const MIN_QUIZ_SECONDS = 7;
+
+// Thai labels for phases and statuses shown in the HUD.
+export const PHASE_LABEL = Object.freeze({
+  move: 'เดิน',
+  quiz: 'ตอบคำถาม',
+  result: 'ผลลัพธ์',
+  ended: ''
+});

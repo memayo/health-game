@@ -1,22 +1,27 @@
 // HOST = the single authoritative client. Only this file resolves phases,
 // assigns roles/spawns/questions, runs timers and decides the winner.
 
-import { signIn, handoff } from './auth.js';
+import { signIn, lastRoom } from './auth.js';
 import {
   db, ref, get, set, update, remove, onValue, onDisconnect, runTransaction
 } from './firebase.js';
 import {
   PHASE, ROLE, TIMING, HUNTER_CHAR_ID,
-  MOVE_TIME_SECONDS, DEFAULT_QUIZ_TIME_SECONDS, CLOSE_ROOM_GRACE_MS
+  MOVE_TIME_SECONDS, DEFAULT_QUIZ_TIME_SECONDS, CLOSE_ROOM_GRACE_MS,
+  MATCH_MINUTE_CHOICES, DEFAULT_MATCH_MINUTES, ROUND_OVERHEAD_SECONDS,
+  MIN_MOVE_SECONDS, MIN_QUIZ_SECONDS, PHASE_LABEL
 } from './gameConfig.js';
 import {
   assignRandomStartingRooms, assignRandomRoles, assignQuestionDecks, questionIdFor,
   getTotalRounds, getRandomRoom, decideWinner,
-  resolveMove, isCorrect, earnsShield, resolveAttackFor
+  resolveMove, isCorrect, earnsShield, resolveAttackFor,
+  fitMatchTiming, quizSecondsFor, rankLeaderboard, matchTimeUp
 } from './gameState.js';
 import { buildMap } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
-import { showGameOverFx } from './pixelDecor.js';
+import { renderGameOverView } from './gameOverView.js';
+import { renderLobbyHall } from './lobbyView.js';
+import { startMatchClock } from './matchClock.js';
 import { parseWorkbook } from './questions.js';
 import { blackoutTransition, playResultSequence } from './effects.js';
 import { openTutorial } from './tutorial.js';
@@ -50,6 +55,9 @@ let serverOffset = 0;
 let deadlineTimer = null;
 let tickTimer = null;
 let closing = false;
+let settings = { minutes: DEFAULT_MATCH_MINUTES };   // hostPrivate/settings
+let timing = null;         // hostPrivate/timing: {moveSeconds, quizScale}
+let stats = {};            // hostPrivate/stats: uid -> {correct, answered, timeMs}
 
 const serverNow = () => Date.now() + serverOffset;
 const isHunterId = (id) => roles[id] === ROLE.HUNTER;
@@ -61,15 +69,39 @@ $('lobby-code').textContent = code;
 init().catch(err => console.error(err));
 
 async function init() {
-  if (!handoff.take(code)) { location.href = 'index.html'; return; }
-
   const user = await signIn();
   uid = user.uid;
 
   const meta = await get(path('meta'));
-  if (!meta.exists() || meta.val().hostUid !== uid) { location.href = 'index.html'; return; }
+  if (!meta.exists() || meta.val().hostUid !== uid) {
+    lastRoom.clear(code);
+    location.href = 'index.html';
+    return;
+  }
+  lastRoom.save(code, 'host');
 
-  onDisconnect(ref(db, base)).remove();
+  // A dropped Host no longer deletes the room: it is flagged offline and the
+  // game waits for it. Only "Close Room" deletes the room.
+  onValue(ref(db, '.info/connected'), s => {
+    if (s.val() !== true || closing) return;
+    onDisconnect(path('public/hostOnline')).set(false);
+    set(path('public/hostOnline'), true).catch(() => {});
+  });
+
+  // Resume: questions, settings, timing and stats live in hostPrivate.
+  const [qSnap, setSnap, timSnap, pubSnap] = await Promise.all([
+    get(path('hostPrivate/questions')), get(path('hostPrivate/settings')),
+    get(path('hostPrivate/timing')), get(path('public'))
+  ]);
+  if (Array.isArray(qSnap.val()) && qSnap.val().length) {
+    questions = qSnap.val();
+    questionById = Object.fromEntries(questions.map(q => [q.id, q]));
+    questionSummary = questions.length + ' ข้อ';
+  }
+  if (setSnap.val()) settings = { ...settings, ...setSnap.val() };
+  timing = timSnap.val();
+  // A Host that dropped mid-resolution may have left the phase claimed: release it.
+  if (pubSnap.val() && pubSnap.val().phaseResolved) await set(path('public/phaseResolved'), false);
 
   mapApi = buildMap($('stage'));
   chars = new CharacterRenderer(mapApi);
@@ -90,6 +122,8 @@ async function init() {
   onValue(path('hostPrivate/turn'), s => { turnState = s.val() || {}; });
   onValue(path('hostPrivate/deck'), s => { assignment = s.val(); });
   onValue(path('hostPrivate/hunterRoom'), s => { hunterRoom = s.val(); });
+  onValue(path('hostPrivate/timing'), s => { timing = s.val(); });
+  onValue(path('hostPrivate/stats'), s => { stats = s.val() || {}; });
   onValue(path('public'), s => { pub = s.val() || {}; onPublic(); });
 
   $('file').addEventListener('change', onFile);
@@ -99,6 +133,46 @@ async function init() {
   }
   // Local presentation only: it never touches Firebase or any game state.
   $('tutorial-open').addEventListener('click', openTutorial);
+  renderTimeChoices();
+  startMatchClock($('game-clock'), () => pub.gameEndsAt, serverNow);
+}
+
+/* ---------------- match length ---------------- */
+
+function renderTimeChoices() {
+  const box = $('time-choices');
+  box.innerHTML = '';
+  for (const m of MATCH_MINUTE_CHOICES) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'chip' + (settings.minutes === m ? ' active' : '');
+    b.textContent = m ? m + ' นาที' : 'ไม่จำกัด';
+    b.addEventListener('click', async () => {
+      settings = { ...settings, minutes: m };
+      renderTimeChoices();
+      refreshStart();
+      await set(path('hostPrivate/settings'), settings).catch(e => console.error(e));
+    });
+    box.appendChild(b);
+  }
+}
+
+function currentFit() {
+  return fitMatchTiming({
+    questions, minutes: settings.minutes, moveSeconds: MOVE_TIME_SECONDS,
+    defaultQuizSeconds: DEFAULT_QUIZ_TIME_SECONDS, overheadSeconds: ROUND_OVERHEAD_SECONDS,
+    minMove: MIN_MOVE_SECONDS, minQuiz: MIN_QUIZ_SECONDS
+  });
+}
+
+function timingSummary() {
+  if (!questions.length) return '';
+  const f = currentFit();
+  const mins = Math.ceil(f.estimateSeconds / 60);
+  if (!settings.minutes) return 'เล่นครบทุกข้อ ประมาณ ' + mins + ' นาที';
+  if (!f.fits) return '⚠ ' + questions.length + ' ข้อ ใช้เวลาไม่ต่ำกว่า ' + mins + ' นาที — หมดเวลาแล้วจะจบเกมทันที';
+  if (f.quizScale < 1) return 'ย่อเวลา: เดิน ' + f.moveSeconds + ' วิ, ตอบ ×' + f.quizScale.toFixed(2) + ' ให้จบใน ' + settings.minutes + ' นาที';
+  return 'จบได้ภายใน ' + settings.minutes + ' นาที (ประมาณ ' + mins + ' นาที)';
 }
 
 /* ---------------- lobby ---------------- */
@@ -113,21 +187,9 @@ function onPlayers() {
 
 // Names only. No roles are shown, and none exist before Start.
 function renderLobbyList() {
-  const ul = $('player-list');
-  ul.innerHTML = '';
-  const names = Object.values(players).map(p => p.displayName || '?');
-  if (!names.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'waiting';
-    ul.appendChild(li);
-    return;
-  }
-  for (const name of names) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    ul.appendChild(li);
-  }
+  renderLobbyHall($('player-list'), players);
+  const n = Object.values(players).filter(p => p.connected !== false).length;
+  $('player-count').textContent = n + ' คน';
 }
 
 /** A user who pressed Leave (or vanished) leaves derived state behind. */
@@ -156,35 +218,41 @@ async function onFile(ev) {
   try {
     const buf = await file.arrayBuffer();
     const parsed = await parseWorkbook(buf);
-    if (!parsed.questions.length) { questionSummary = 'no valid rows'; $('hint').textContent = questionSummary; return; }
+    if (!parsed.questions.length) { questionSummary = 'ไม่พบคำถามที่ใช้ได้'; $('hint').textContent = questionSummary; return; }
     questions = parsed.questions;
     questionById = Object.fromEntries(questions.map(q => [q.id, q]));
     await set(path('hostPrivate/questions'), questions);
-    questionSummary = questions.length + ' questions'
-      + (parsed.errors.length ? ' / ' + parsed.errors.length + ' skipped' : '');
+    questionSummary = questions.length + ' ข้อ'
+      + (parsed.errors.length ? ' (ข้าม ' + parsed.errors.length + ' แถว)' : '');
     if (parsed.errors.length) console.warn('Skipped rows:', parsed.errors);
   } catch (e) {
     console.error(e);
-    questionSummary = 'read failed';
+    questionSummary = 'อ่านไฟล์ไม่สำเร็จ';
   }
   refreshStart();
 }
 
 function refreshStart() {
   if (pub.phase && pub.phase !== PHASE.LOBBY) return;
-  const count = Object.keys(players).length;
+  const count = Object.values(players).filter(p => p.connected !== false).length;
   const hasQuestions = questions.length > 0;
   const ready = count >= 2 && hasQuestions;
   $('start').disabled = !ready;
-  if (ready) $('hint').textContent = questionSummary;
-  else if (count < 2) $('hint').textContent = 'need 2 players';
-  else $('hint').textContent = questionSummary || 'need questions';
+  $('q-summary').textContent = questionSummary || 'ยังไม่มีคำถาม';
+  $('q-summary').classList.toggle('ok', hasQuestions);
+  $('time-summary').textContent = timingSummary();
+  if (ready) $('hint').textContent = 'พร้อมออกผจญภัย!';
+  else if (count < 2) $('hint').textContent = 'ต้องมีผู้เล่นอย่างน้อย 2 คน';
+  else $('hint').textContent = 'อัปโหลดไฟล์คำถาม (.xlsx) ก่อน';
 }
 
 async function startGame() {
   $('start').disabled = true;
-  const ids = Object.keys(players);
+  // Players who dropped out of the lobby are left behind.
+  const ids = Object.keys(players).filter(id => players[id].connected !== false);
   if (ids.length < 2 || !questions.length) { refreshStart(); return; }
+  const fit = currentFit();
+  timing = { moveSeconds: fit.moveSeconds, quizScale: fit.quizScale };
 
   const roleMap = assignRandomRoles(ids);                       // one random Hunter
   const hunter = ids.find(id => roleMap[id] === ROLE.HUNTER);
@@ -193,6 +261,14 @@ async function startGame() {
   const deck = assignQuestionDecks(ids, questions.map(q => q.id));
 
   const updates = {};
+  for (const id of Object.keys(players)) {
+    if (!ids.includes(id)) updates['players/' + id] = null;
+  }
+  updates['hostPrivate/timing'] = timing;
+  updates['hostPrivate/settings'] = settings;
+  updates['hostPrivate/stats'] = null;
+  updates['public/gameEndsAt'] = settings.minutes ? serverNow() + settings.minutes * 60000 : null;
+  updates['public/matchMinutes'] = settings.minutes || 0;
   for (const id of ids) {
     updates['roles/' + id] = roleMap[id];
     updates['players/' + id + '/alive'] = true;
@@ -215,17 +291,19 @@ async function startGame() {
 }
 
 function movePhaseUpdates() {
+  const secs = (timing && timing.moveSeconds) || MOVE_TIME_SECONDS;
   return {
     'public/phase': PHASE.MOVE,
     'public/phaseResolved': false,
     'public/moveStartedAt': serverNow(),
-    'public/moveDeadline': serverNow() + MOVE_TIME_SECONDS * 1000
+    'public/moveDeadline': serverNow() + secs * 1000
   };
 }
 
 async function closeRoom() {
   if (closing) return;
   closing = true;
+  lastRoom.clear(code);
   clearTimers();
   try {
     await set(path('public/closed'), true);
@@ -269,7 +347,7 @@ function renderBoard() {
 }
 
 function onPublic() {
-  if (pub.closed) { location.href = 'index.html'; return; }
+  if (pub.closed) { lastRoom.clear(code); location.href = 'index.html'; return; }
 
   const inGame = pub.phase && pub.phase !== PHASE.LOBBY;
   const over = pub.phase === PHASE.ENDED;
@@ -277,8 +355,9 @@ function onPublic() {
   $('bar').classList.toggle('hidden', !inGame || over);
   $('board').classList.toggle('hidden', !inGame || over);
   $('gameover').classList.toggle('hidden', !over);
-  $('phase').textContent = over ? '' : (pub.phase || '');
-  $('round').textContent = pub.totalRounds ? 'ROUND ' + (pub.round || 1) + ' / ' + pub.totalRounds : '';
+  $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
+  $('round').textContent = pub.totalRounds ? 'รอบ ' + (pub.round || 1) + '/' + pub.totalRounds : '';
+  if (!inGame) refreshStart();
 
   if (pub.phase === PHASE.MOVE) enterMove();
   else if (pub.phase === PHASE.QUIZ) enterQuiz();
@@ -324,17 +403,8 @@ async function enterResult() {
 
 function renderGameOver() {
   clearTimers();
-  const go = pub.gameOver || {};
-  $('go-title').textContent = go.winner === ROLE.HUNTER ? 'HUNTER WINS' : 'PLAYERS WIN';
-  showGameOverFx($('go-fx'), go.winner === ROLE.HUNTER);
-  $('go-reveal').textContent = go.hunterName ? 'Hunter: ' + go.hunterName : '';
-  const ul = $('go-survivors');
-  ul.innerHTML = '';
-  for (const name of go.survivors || []) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    ul.appendChild(li);
-  }
+  lastRoom.clear(code);
+  renderGameOverView(pub.gameOver || {});
 }
 
 /* ---------------- countdown display ---------------- */
@@ -395,6 +465,9 @@ function activeIds() {
     roles[id] && (isHunterId(id) || players[id].alive !== false));
 }
 
+/** Active and online: the only ones a phase waits for before its deadline. */
+const waitingFor = () => activeIds().filter(id => players[id].connected !== false);
+
 function tick() {
   if (resolving || closing || !pub.phase) return;
   if (pub.phase === PHASE.MOVE && moveReady()) guard(resolveMovePhase);
@@ -402,9 +475,10 @@ function tick() {
 }
 
 function moveReady() {
-  const need = activeIds();
-  if (!need.length) return false;
+  if (!activeIds().length) return false;
   if (pub.moveDeadline && serverNow() >= pub.moveDeadline) return true;   // timeout
+  const need = waitingFor();
+  if (!need.length) return false;
   const moves = actions.moves || {};
   const hunter = hunterUid();
   for (const id of need) {
@@ -419,10 +493,13 @@ function moveReady() {
 }
 
 function quizReady() {
-  const need = activeIds();
-  if (!need.length) return false;
+  const all = activeIds();
+  if (!all.length) return false;
   const ans = actions.answers || {};
   const now = serverNow();
+  // Offline participants are not waited for: no answer counts as wrong.
+  const need = waitingFor();
+  if (!need.length) return all.every(id => { const c = quizCards[id]; return !c || (c.deadline && now >= c.deadline); });
   return need.every(id => {
     if (ans[id] && ans[id].choice) return true;
     const card = quizCards[id];
@@ -486,7 +563,8 @@ async function resolveMovePhase() {
   for (const id of active) {
     const q = questionById[questionIdFor(assignment, id, round)];
     if (!q) continue;
-    const secs = Number(q.timeLimit) > 0 ? Number(q.timeLimit) : DEFAULT_QUIZ_TIME_SECONDS;
+    const secs = quizSecondsFor(q, (timing && timing.quizScale) || 1,
+      DEFAULT_QUIZ_TIME_SECONDS, MIN_QUIZ_SECONDS);
     updates['questions/' + id] = {
       id: q.id, text: q.text, choices: q.choices,
       timeLimit: secs, deadline: quizStartedAt + secs * 1000
@@ -521,6 +599,24 @@ async function resolveQuizPhase() {
   const hunterCorrect = hunter ? correctFor(hunter) : false;
 
   const updates = {};
+
+  // Leaderboard stats for everyone who had a question this round.
+  const startedAt = pub.quizStartedAt || 0;
+  for (const id of Object.keys(quizCards)) {
+    if (!players[id] || !roles[id]) continue;
+    const card = quizCards[id];
+    const limitMs = (card.timeLimit || DEFAULT_QUIZ_TIME_SECONDS) * 1000;
+    const a = answers[id];
+    const ok = !!(a && inTime(a, card.deadline));
+    const took = ok && typeof a.at === 'number' && startedAt
+      ? Math.min(limitMs, Math.max(0, a.at - startedAt)) : limitMs;
+    const prev = stats[id] || { correct: 0, answered: 0, timeMs: 0 };
+    updates['hostPrivate/stats/' + id] = {
+      correct: prev.correct + (correctFor(id) ? 1 : 0),
+      answered: prev.answered + (ok ? 1 : 0),
+      timeMs: prev.timeMs + took
+    };
+  }
   const outcomes = {};
   const resolved = {};
 
@@ -559,9 +655,15 @@ async function endRound() {
   const aliveNormals = Object.keys(fresh)
     .filter(id => !isHunterId(id) && fresh[id].alive !== false);
 
-  const winner = decideWinner({
+  let winner = decideWinner({
     alivePlayerCount: aliveNormals.length, round, totalRounds
   });
+  let reason = winner ? 'rounds' : null;
+  // Match clock: when time is up the game ends after this round.
+  if (!winner && matchTimeUp(pub.gameEndsAt, serverNow())) {
+    winner = aliveNormals.length ? 'players' : ROLE.HUNTER;
+    reason = 'time';
+  }
 
   const updates = {};
   for (const id of Object.keys(fresh)) {
@@ -577,11 +679,19 @@ async function endRound() {
     const hunter = hunterUid();
     updates['questions'] = null;
     updates['public/phase'] = PHASE.ENDED;
+    const finalStats = (await get(path('hostPrivate/stats'))).val() || {};
+    const who = {};
+    for (const id of Object.keys(fresh)) {
+      if (!roles[id]) continue;
+      who[id] = { name: fresh[id].displayName || '?', role: roles[id], alive: fresh[id].alive !== false };
+    }
     updates['public/gameOver'] = {
       winner,
+      reason,
       hunterUid: hunter || null,
       hunterName: (fresh[hunter] || {}).displayName || '?',
-      survivors: aliveNormals.map(id => fresh[id].displayName || '?')
+      survivors: aliveNormals.map(id => fresh[id].displayName || '?'),
+      leaderboard: rankLeaderboard(finalStats, who)
     };
   } else {
     updates['public/round'] = round + 1;

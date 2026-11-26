@@ -228,7 +228,7 @@ function makeCursor(mapApi) {
 /* ---------------- pages ---------------- */
 
 function pageSurvive(host, setCaption) {
-  setCaption('Survive every question.');
+  setCaption('เอาตัวรอดให้ครบทุกข้อ ถ้าผู้เล่นยังรอดอยู่ตอนจบ ฝั่งผู้เล่นชนะ');
   const wrap = el('div', 'tut-survive');
   const track = el('div', 'tut-rounds');
   const pills = [];
@@ -270,10 +270,10 @@ function pageSurvive(host, setCaption) {
 }
 
 function pageMove(host, setCaption) {
-  setCaption('Move to one adjacent room.');
+  setCaption('แต่ละรอบเดินได้ 1 ห้องที่อยู่ติดกัน (ซ้าย ขวา บน ล่าง)');
   const map = buildDemoMap(host);
   const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'YOU');
+  const player = makeChar(map, 'player', 'คุณ');
 
   const start = () => {
     map.clear();
@@ -294,9 +294,9 @@ function pageMove(host, setCaption) {
       [TUT.beat, () => {
         map.clear(); cur.hide(); player.place('A');
         for (const r of ROOMS) map.state(r.id, ADJ.A.includes(r.id) ? 'reachable' : 'blocked');
-        map.banner('NO CLICK', 'warn');
+        map.banner('ไม่ได้เลือกห้อง', 'warn');
       }],
-      [TUT.hold, () => { map.clear(); map.banner('STAYS IN A', 'warn'); }],
+      [TUT.hold, () => { map.clear(); map.banner('อยู่ห้อง A ต่อ', 'warn'); }],
       [TUT.hold, () => {}]
     ], start);
   };
@@ -304,7 +304,7 @@ function pageMove(host, setCaption) {
 }
 
 function pageHunt(host, setCaption) {
-  setCaption('The Hunter travels by pipe and can target any room.');
+  setCaption('Hunter มุดท่อไปโผล่ได้ทุกห้อง เลือกห้องเป้าหมายได้ 1 ห้อง');
   const map = buildDemoMap(host);
   const cur = makeCursor(map);
   const hunter = makeChar(map, 'hunter', '');
@@ -324,13 +324,13 @@ function pageHunt(host, setCaption) {
       [TUT.beat, () => cur.to('A')],
       [TUT.cursorGlide, () => cur.to('F')],           // glide across distant rooms
       [TUT.cursorGlide, () => { cur.click(); map.clear(); map.state('F', 'target'); }],
-      [TUT.beat, () => { cur.hide(); map.banner('TARGET F', 'target'); }],
+      [TUT.beat, () => { cur.hide(); map.banner('เป้าหมาย: F', 'target'); }],
       [TUT.hold, () => { map.flash('F', 'tut-fx-pipe'); }],
-      [TUT.beat, () => map.banner('ANSWER CORRECT', 'good')],
+      [TUT.beat, () => map.banner('ตอบถูก', 'good')],
       [TUT.hold, () => { map.state('F', 'focus'); hunter.show(true); map.flash('F', 'tut-fx-emerge'); }],
       [TUT.emergeWait, () => { map.flash('F', 'tut-fx-attack'); victim.hit(); }],
       [TUT.hold, () => { victim.show(false); }],
-      [TUT.beat, () => { map.clear(); hunter.show(false); map.banner('WRONG ANSWER = NO ATTACK', 'warn'); }],
+      [TUT.beat, () => { map.clear(); hunter.show(false); map.banner('Hunter ตอบผิด = ไม่ได้โจมตี', 'warn'); }],
       [TUT.hold, () => {}]
     ], start);
   };
@@ -338,16 +338,16 @@ function pageHunt(host, setCaption) {
 }
 
 function pageShield(host, setCaption) {
-  setCaption('MOVE + CORRECT = SHIELD');
+  setCaption('เดินสำเร็จ + ตอบถูก = ได้โล่ กันการโจมตีได้ 1 รอบ');
   const formula = el('div', 'tut-formula');
-  formula.append(el('span', 'tut-term', 'MOVE'), el('span', 'tut-op', '+'),
-    el('span', 'tut-term', 'CORRECT'), el('span', 'tut-op', '='),
-    el('span', 'tut-term tut-term-key', 'SHIELD'));
+  formula.append(el('span', 'tut-term', 'เดินสำเร็จ'), el('span', 'tut-op', '+'),
+    el('span', 'tut-term', 'ตอบถูก'), el('span', 'tut-op', '='),
+    el('span', 'tut-term tut-term-key', 'ได้โล่'));
   host.appendChild(formula);
 
   const map = buildDemoMap(host);
   const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'YOU');
+  const player = makeChar(map, 'player', 'คุณ');
   const hunter = makeChar(map, 'hunter', '');
 
   const terms = formula.querySelectorAll('.tut-term');
@@ -366,13 +366,13 @@ function pageShield(host, setCaption) {
       [TUT.beat, () => { map.state('B', 'reachable'); map.state('D', 'reachable'); cur.to('B'); }],
       [TUT.cursorGlide, () => { cur.click(); map.clear(); player.walk('B'); }],
       [TUT.walk, () => { terms[0].dataset.on = '1'; cur.hide(); }],
-      [TUT.beat, () => map.banner('CORRECT', 'good')],
+      [TUT.beat, () => map.banner('ตอบถูก', 'good')],
       [TUT.beat, () => { terms[1].dataset.on = '1'; }],
       [TUT.beat, () => { terms[2].dataset.on = '1'; player.shield(); }],
-      [TUT.beat, () => { map.state('B', 'target'); map.banner('TARGET B', 'target'); }],
+      [TUT.beat, () => { map.state('B', 'target'); map.banner('เป้าหมาย: B', 'target'); }],
       [TUT.hold, () => { map.state('B', 'focus'); hunter.show(true); map.flash('B', 'tut-fx-emerge'); }],
       [TUT.emergeWait, () => { map.flash('B', 'tut-fx-attack'); player.shield(); }],
-      [TUT.beat, () => map.banner('BLOCKED', 'good')],
+      [TUT.beat, () => map.banner('โล่กันไว้ได้!', 'good')],
       [TUT.hold, () => {}]
     ], start);
   };
@@ -380,10 +380,10 @@ function pageShield(host, setCaption) {
 }
 
 function pageLock(host, setCaption) {
-  setCaption('The Hunter locks one room each round.');
+  setCaption('Hunter ปิดห้องได้ 1 ห้องต่อรอบ ใครเดินเข้าห้องนั้นจะเดินไม่สำเร็จ');
   const map = buildDemoMap(host);
   const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'YOU');
+  const player = makeChar(map, 'player', 'คุณ');
 
   const start = () => {
     map.clear();
@@ -394,15 +394,15 @@ function pageLock(host, setCaption) {
     runTimeline([
       [TUT.beat, () => { map.state('B', 'reachable'); map.state('D', 'reachable'); cur.to('B'); }],
       [TUT.cursorGlide, () => { cur.click(); map.state('B', 'chosen'); }],
-      [TUT.beat, () => { cur.hide(); map.banner('HUNTER LOCKS B', 'bad'); }],
+      [TUT.beat, () => { cur.hide(); map.banner('Hunter ปิดห้อง B', 'bad'); }],
       [TUT.beat, () => { map.clear(); map.state('B', 'lock'); }],
-      [TUT.hold, () => { player.place('A'); map.banner('MOVE FAILED', 'bad'); }],
-      [TUT.hold, () => map.banner('ANSWER CORRECT', 'good')],
-      [TUT.hold, () => map.banner('NO SHIELD', 'bad')],
+      [TUT.hold, () => { player.place('A'); map.banner('เดินไม่สำเร็จ', 'bad'); }],
+      [TUT.hold, () => map.banner('ตอบถูก', 'good')],
+      [TUT.hold, () => map.banner('ไม่ได้โล่', 'bad')],
       [TUT.hold, () => {
         map.clear();
         map.state('E', 'target'); map.state('B', 'lock');
-        map.banner('TARGET = PREDICT   LOCK = TRAP', '');
+        map.banner('เป้าหมาย = เดาใจ · ปิดห้อง = ดักทาง', '');
       }],
       [TUT.hold, () => {}]
     ], start);
@@ -430,8 +430,8 @@ function build() {
   const prev = el('button', 'btn tut-arrow', '‹');
   const counter = el('span', 'tut-count');
   const next = el('button', 'btn tut-arrow', '›');
-  const pause = el('button', 'btn tut-mini', 'Pause');
-  const close = el('button', 'btn tut-mini', 'Close');
+  const pause = el('button', 'btn tut-mini', 'หยุด');
+  const close = el('button', 'btn tut-mini', 'ปิด');
   nav.append(prev, counter, next, pause, close);
 
   box.append(title, stage, caption, nav);
@@ -445,7 +445,7 @@ function build() {
   close.addEventListener('click', closeTutorial);
   pause.addEventListener('click', () => {
     paused = !paused;
-    pause.textContent = paused ? 'Play' : 'Pause';
+    pause.textContent = paused ? 'เล่น' : 'หยุด';
     if (paused) stopEverything(); else show();     // resume restarts this page
   });
 
@@ -467,7 +467,7 @@ function goto(n) {
   page = (n + PAGES.length) % PAGES.length;
   if (paused) {                      // navigating while paused resumes playback
     paused = false;
-    root._parts.pause.textContent = 'Pause';
+    root._parts.pause.textContent = 'หยุด';
   }
   show();
 }
@@ -477,7 +477,7 @@ export function openTutorial() {
   open = true;
   paused = false;
   page = 0;
-  root._parts.pause.textContent = 'Pause';
+  root._parts.pause.textContent = 'หยุด';
   root.classList.remove('hidden');
   show();
 

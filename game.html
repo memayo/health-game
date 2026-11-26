@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -11,23 +11,28 @@
 <body class="play">
   <header id="bar" class="bar hidden">
     <span id="bar-code" class="code"></span>
+    <span id="role-badge" class="role-badge hidden"></span>
     <span id="round" class="round"></span>
     <span id="phase" class="phase"></span>
     <span id="timer" class="timer"></span>
+    <span id="game-clock" class="game-clock hidden"></span>
     <span id="status" class="status"></span>
-    <button id="leave-bar" class="btn btn-mini">Leave</button>
+    <button id="leave-bar" class="btn btn-mini btn-ghost">ออก</button>
   </header>
+  <div id="host-away" class="host-away hidden">Host หลุดการเชื่อมต่อ… รอสักครู่ เกมจะเดินต่อเมื่อ Host กลับมา</div>
 
   <section id="lobby" class="screen lobby">
-    <div class="home-title">
-      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":4,"light":0.6}'></div>
+    <div class="sign">
+      <span class="sign-label">รหัสห้อง</span>
       <div id="lobby-code" class="lobby-code"></div>
-      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":9,"light":0.6}'></div>
     </div>
-    <h1 class="lobby-title">LOBBY</h1>
-    <ul id="player-list" class="lobby-players"></ul>
+    <div class="hall">
+      <div class="hall-head"><h1 class="lobby-title">ผู้กล้าในห้อง</h1><span id="player-count" class="count-pill"></span></div>
+      <ul id="player-list" class="lobby-players"></ul>
+    </div>
+    <p class="wait-host"><span class="dots">รอ Host เริ่มเกม</span></p>
     <div class="lobby-actions">
-      <button id="leave-lobby" class="btn btn-ghost">Leave</button>
+      <button id="leave-lobby" class="btn btn-ghost">ออกจากห้อง</button>
     </div>
   </section>
 
@@ -41,7 +46,7 @@
     <section id="quiz" class="quiz hidden">
       <p id="q-text" class="q-text"></p>
       <div id="q-choices" class="choices"></div>
-      <button id="q-submit" class="btn" disabled>Submit</button>
+      <button id="q-submit" class="btn btn-primary" disabled>ส่งคำตอบ</button>
     </section>
   </div>
 
@@ -50,12 +55,19 @@
       <div id="go-fx" class="go-fx"></div>
       <h1 id="go-title" class="go-title"></h1>
       <p id="go-reveal" class="go-reveal"></p>
+      <div id="go-board-wrap" class="go-board-wrap hidden">
+        <h2 class="go-sub">ตารางคะแนน</h2>
+        <p id="go-mvp" class="go-mvp"></p>
+        <ol id="go-board" class="go-board"></ol>
+        <p class="go-note">เรียงตามจำนวนข้อที่ตอบถูก · ถ้าเท่ากัน ใช้เวลาตอบรวมน้อยกว่าชนะ</p>
+      </div>
+      <h2 id="go-survivors-head" class="go-sub">ผู้รอดชีวิต</h2>
       <ul id="go-survivors" class="go-survivors"></ul>
-      <button id="leave-over" class="btn">Leave</button>
+      <button id="leave-over" class="btn btn-primary">ออกจากห้อง</button>
     </div>
   </section>
 
   <script type="module" src="js/game.js"></script>
-  <script type="module">import { mountDecor } from './js/pixelDecor.js'; mountDecor();</script>
+  <script type="module">import { mountDecor } from './js/pixelDecor.js'; import { Backdrop } from './js/backdrop.js'; mountDecor(); new Backdrop();</script>
 </body>
 </html>

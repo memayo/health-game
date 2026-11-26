@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="th">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -10,29 +10,46 @@
 <body class="home">
 
   <main id="view-home" class="screen">
-    <div class="home-title">
-      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":4,"light":0.6}'></div>
+    <header class="gate-title">
       <h1 class="logo"><span class="logo-main">HEALTH<br>GAME</span><span class="logo-sub">DUNGEON QUIZ</span></h1>
-      <div class="torch-slot" data-pixelfx="fire/torch" data-box="16,40" data-scale="2" data-opts='{"seed":9,"light":0.6}'></div>
+      <p class="tagline">ตอบให้ถูก หลบให้พ้น เอาตัวรอดจาก Hunter</p>
+    </header>
+
+    <div id="rejoin" class="rejoin hidden">
+      <p class="rejoin-text">ยังมีเกมค้างอยู่ <b id="rejoin-code"></b></p>
+      <div class="rejoin-actions">
+        <button id="btn-rejoin" class="btn btn-primary">กลับเข้าห้อง</button>
+        <button id="btn-rejoin-no" class="btn btn-ghost btn-mini">ไม่ใช่</button>
+      </div>
     </div>
-    <div class="stack">
-      <button id="btn-host" class="btn btn-primary">Host</button>
-      <button id="btn-join" class="btn">Join</button>
-    </div>
+
+    <nav class="stack menu">
+      <button id="btn-join" class="btn btn-primary btn-big">เข้าร่วมเกม</button>
+      <button id="btn-host" class="btn btn-big">สร้างห้อง (Host)</button>
+    </nav>
     <p id="msg-home" class="msg"></p>
   </main>
 
   <main id="view-join" class="screen hidden">
-    <form id="join-form" class="stack" autocomplete="off">
-      <input id="join-code" maxlength="6" placeholder="CODE" required>
-      <input id="join-name" maxlength="14" placeholder="NAME" required>
-      <button class="btn btn-primary" type="submit">Join</button>
-      <button id="btn-back" class="btn btn-ghost" type="button">Back</button>
+    <form id="join-form" class="tablet" autocomplete="off">
+      <h2 class="tablet-title">เข้าสู่ดันเจี้ยน</h2>
+      <label class="field">
+        <span class="field-label">รหัสห้อง</span>
+        <input id="join-code" maxlength="6" placeholder="AB12" required inputmode="latin" autocapitalize="characters">
+      </label>
+      <label class="field">
+        <span class="field-label">ชื่อผู้กล้า</span>
+        <input id="join-name" maxlength="14" placeholder="ชื่อของคุณ" required>
+      </label>
+      <button class="btn btn-primary btn-big" type="submit">เข้าห้อง</button>
+      <button id="btn-back" class="btn btn-ghost" type="button">ย้อนกลับ</button>
+      <p id="msg-join" class="msg"></p>
     </form>
-    <p id="msg-join" class="msg"></p>
   </main>
 
+  <footer class="home-foot">ใช้เครื่องละ 1 คน · หลุดแล้วกลับเข้าห้องได้จากหน้านี้</footer>
+
+  <script type="module">import { Backdrop } from './js/backdrop.js'; new Backdrop();</script>
   <script type="module" src="js/lobby.js"></script>
-  <script type="module">import { mountDecor } from './js/pixelDecor.js'; mountDecor();</script>
 </body>
 </html>

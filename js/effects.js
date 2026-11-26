@@ -145,7 +145,7 @@ export async function playResultSequence(mapApi, chars, result) {
   await wait(TIMING.cameraDuration);
 
   if (!result.hunterCorrect) {
-    await bigMessage('HUNTER ANSWERED WRONG!');
+    await bigMessage('HUNTER ตอบผิด! รอดไปอีกรอบ');
     mapApi.resetCamera();
     releaseHolds(chars, result);
     return;

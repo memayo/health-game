@@ -153,15 +153,23 @@ rooms/{CODE}/
 Players write only their own action node, and only during the matching phase.
 Hidden choices and correct answers are never in `public/`.
 
-## Sessions and roles
+## Sessions, reconnect and roles
 
-State is live-only. There is no persistence, no reconnect and no saved match:
-
-- Anonymous Auth uses **session** persistence — the uid lives in the tab and dies with it.
-- A one-shot ticket carries the room code from Home to the game page. It is consumed on
-  read, so a **refresh never rejoins**; the client is sent back to Home.
-- A player leaving removes their own record; the Host leaving removes the whole room.
-- No localStorage is used anywhere.
+- Anonymous Auth uses **local** persistence: the uid is remembered on the device, so a
+  player who refreshes, loses the network or closes the tab comes back as the same user.
+  All tabs of one browser share that uid — to test several players on one computer use
+  different browsers or private windows.
+- Home remembers the last room (`localStorage` `hg.lastRoom`) and shows a **กลับเข้าห้อง**
+  (rejoin) button while that room is still running and this uid is its Host or one of its
+  players. Typing the same room code on Join also rejoins.
+- Dropping out only flags it: players get `players/{uid}/connected = false`, the Host gets
+  `public/hostOnline = false` (players see a "waiting for Host" banner). Nothing is deleted.
+  An offline player is not waited for: the phase resolves without them (no move / wrong).
+- A Host that comes back resumes from the database: questions (`hostPrivate/questions`),
+  settings, timers and stats are reloaded, and a half-claimed phase is released.
+- **Leave** removes the player; **Close Room** deletes the room. Players still offline in
+  the lobby when the Host presses Start are left out of the match.
+- No database rule changes were needed for any of this.
 
 The Hunter sees no Player sprites during MOVE and must predict where Players go; once
 movement has resolved the Hunter sees resolved positions for QUIZ and RESULT, then loses
@@ -174,6 +182,22 @@ Roles do not exist until Start. On Start the Host picks exactly one Hunter at ra
 (`assignRandomRoles`) and writes roles to `roles/{uid}`, which each client can read only
 for itself. The lobby never shows roles, and `public/result` carries no Hunter uid — the
 Hunter emerges as an anonymous sprite.
+
+## Match length
+
+The Host picks a match length in the lobby (no limit, 5, 10, 15, 20, 30 minutes). On Start
+every question is still used: `fitMatchTiming` (in `gameState.js`) shortens the move time and
+scales each question's own time limit so that rounds x (move + quiz + ~8 s of animation)
+fits the length, never below 5 s to move and 7 s to answer. The Host shows the estimate; if
+even the floors don't fit it warns. `public/gameEndsAt` drives the HUD clock, and when it
+passes the game ends after the round that is playing (Players win if any are alive).
+
+## Leaderboard
+
+For every question the Host records, per participant (Hunter included), whether it was
+correct and how long the answer took (`answer.at - quizStartedAt`; no answer = the full
+time limit) in `hostPrivate/stats`. The game-over screen ranks by most correct answers, then
+by the smaller total answer time (`rankLeaderboard`).
 
 ## Rounds, timers and questions
 

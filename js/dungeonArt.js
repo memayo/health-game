@@ -199,3 +199,128 @@ function drawGrate(set, rect, cx, cy, wallH) {
   rect(x0 - 1, y0 - 1, w + 2, 1, P.iron[3]);
   set(x0 - 1, y0 + h, P.iron[0]); set(x0 + w, y0 + h, P.iron[0]);
 }
+
+/**
+ * A full-screen dungeon hall for the start screens: a brick back wall with a big
+ * arched gate in the middle, pillars, banners, and a flagstone floor.
+ * Returns anchor points (game px) for torches etc.
+ */
+export function drawHall(buf, W, H) {
+  const rnd = mulberry(77);
+  const set = (x, y, c) => {
+    x |= 0; y |= 0;
+    if (x < 0 || y < 0 || x >= W || y >= H) return;
+    buf[y * W + x] = c;
+  };
+  const rect = (x, y, w, h, c) => { for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) set(x + i, y + j, c); };
+  const floorY = Math.round(H * 0.68);
+
+  // Back wall: bricks 8x4, darker toward the top (out of the torchlight).
+  for (let y = 0; y < floorY; y++) for (let x = 0; x < W; x++) {
+    const row = Math.floor(y / 4), bx = (x + (row & 1) * 4) % 8, by = y % 4;
+    const h = ((Math.floor((x + (row & 1) * 4) / 8) * 92837111) ^ (row * 689287499)) >>> 0;
+    const depth = y / floorY;
+    let c = P.brick[Math.min(2, (h % 3) + (depth > 0.55 ? 0 : -1) < 0 ? 0 : (h % 3) + (depth > 0.55 ? 0 : -1))];
+    if (depth < 0.35) c = (h & 1) ? P.rock[2] : P.rock[1];
+    if (by === 0 && bx > 0 && depth > 0.35) c = h % 9 === 0 ? P.brickHi : P.brick[Math.min(2, h % 3 + 1)];
+    if (bx === 0 || by === 3) c = P.mortar;
+    set(x, y, c);
+  }
+  // Moss streaks running down the wall.
+  for (let n = 0; n < W / 9; n++) {
+    let x = rnd() * W | 0, y = (rnd() * floorY * 0.6 + floorY * 0.3) | 0;
+    for (let k = 0; k < 6 + (rnd() * 10 | 0); k++) { set(x, y, P.moss[rnd() * 3 | 0]); y++; if (rnd() < 0.3) x += rnd() < 0.5 ? -1 : 1; }
+  }
+  // Wall base.
+  rect(0, floorY - 3, W, 1, P.wallCap[0]);
+  rect(0, floorY - 2, W, 2, P.wallBase);
+
+  // Floor: flagstones getting larger toward the viewer.
+  for (let y = floorY; y < H; y++) {
+    const t = (y - floorY) / (H - floorY);
+    const th = Math.max(3, Math.round(3 + t * 9));
+    const tw = th * 2;
+    const ry = Math.floor(Math.pow(t, 0.8) * 12);
+    for (let x = 0; x < W; x++) {
+      const sx = (x + (ry & 1) * (tw >> 1)) % tw;
+      const edgeY = Math.abs(Math.pow(t, 0.8) * 12 - Math.round(Math.pow(t, 0.8) * 12)) < 0.05 + 0.02 / (t + 0.1);
+      const h = ((Math.floor((x + (ry & 1) * (tw >> 1)) / tw) * 73856093) ^ (ry * 19349663)) >>> 0;
+      let c = P.floor[h % 3 + (h % 11 === 0 ? 1 : 0)];
+      if (sx === 0 || edgeY) c = P.floorLine;
+      set(x, y, c);
+    }
+  }
+
+  // The gate: an arch with a dark opening and an iron portcullis.
+  const gw = Math.round(Math.min(W * 0.26, H * 0.5)), gh = Math.round(floorY * 0.62);
+  const gx = Math.round(W / 2 - gw / 2), gy = floorY - gh;
+  const r = gw / 2;
+  for (let y = gy - 4; y < floorY; y++) for (let x = gx - 4; x < gx + gw + 4; x++) {
+    const dx = x - (gx + r - 0.5), dy = y - (gy + r);
+    const inArch = y >= gy + r ? (x >= gx && x < gx + gw) : (dx * dx + dy * dy <= r * r);
+    const inFrame = y >= gy + r ? (x >= gx - 4 && x < gx + gw + 4) : (dx * dx + dy * dy <= (r + 4) * (r + 4));
+    if (inArch) {
+      const fade = (y - gy) / gh;
+      set(x, y, fade > 0.85 ? P.void[1] : P.void[0]);
+    } else if (inFrame) {
+      const ring = Math.floor(Math.atan2(dy, dx) * 6);
+      set(x, y, (ring & 1) ? P.wallCap[1] : P.wallCap[0]);
+    }
+  }
+  // Keystone.
+  rect(gx + r - 3, gy - 5, 6, 6, P.brickHi);
+  rect(gx + r - 2, gy - 4, 4, 1, P.wallCap[1]);
+  // Portcullis, raised halfway.
+  const pcBottom = gy + Math.round(gh * 0.55);
+  for (let x = gx + 2; x < gx + gw - 2; x += 4) for (let y = gy + 2; y < pcBottom; y++) {
+    const dx = x - (gx + r - 0.5), dy = y - (gy + r);
+    if (y < gy + r && dx * dx + dy * dy > (r - 1) * (r - 1)) continue;
+    set(x, y, P.iron[2]);
+  }
+  for (let y = gy + 6; y < pcBottom; y += 6) for (let x = gx + 1; x < gx + gw - 1; x++) {
+    const dx = x - (gx + r - 0.5), dy = y - (gy + r);
+    if (y < gy + r && dx * dx + dy * dy > (r - 1) * (r - 1)) continue;
+    set(x, y, P.iron[1]);
+  }
+  for (let x = gx + 2; x < gx + gw - 2; x += 4) { set(x, pcBottom, P.iron[3]); set(x, pcBottom + 1, P.iron[2]); }
+
+  // Banners either side of the gate.
+  const banner = (bx) => {
+    const bw = Math.max(8, Math.round(gw * 0.22)), bh = Math.round(gh * 0.55), by = gy + 4;
+    rect(bx - 1, by - 2, bw + 2, 2, P.iron[2]);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) {
+      const tail = y > bh - bw / 2 && Math.abs(x - bw / 2 + 0.5) < (y - (bh - bw / 2)) ;
+      if (tail) continue;
+      let c = x === 0 || x === bw - 1 ? rgb('#4a1c22') : rgb('#7a2a2e');
+      if (x === 1) c = rgb('#9a3a3a');
+      set(bx + x, by + y, c);
+    }
+    // gold cross emblem (a health game!)
+    const cx = bx + Math.floor(bw / 2), cy = by + Math.round(bh * 0.35);
+    rect(cx - 1, cy - 4, 2, 8, P.plaque[3]);
+    rect(cx - 4, cy - 1, 8, 2, P.plaque[3]);
+  };
+  const bannerOff = Math.round(gw * 0.42);
+  banner(gx - bannerOff - Math.max(8, Math.round(gw * 0.22)));
+  banner(gx + gw + bannerOff);
+
+  // Bones and rubble on the floor.
+  for (let n = 0; n < 7; n++) {
+    const x = rnd() * W | 0, y = floorY + 4 + (rnd() * (H - floorY - 8) | 0);
+    if (Math.abs(x - W / 2) < gw * 0.7) continue;
+    for (let i = 0; i < 4; i++) set(x + i, y, P.bone[1]);
+    set(x - 1, y - 1, P.bone[2]); set(x + 4, y + 1, P.bone[2]);
+  }
+
+  const torchY = gy + Math.round(gh * 0.5);
+  return {
+    floorY,
+    torches: [
+      { x: gx - Math.round(gw * 0.2), y: torchY },
+      { x: gx + gw + Math.round(gw * 0.2), y: torchY },
+      { x: Math.round(W * 0.08), y: torchY + 4 },
+      { x: Math.round(W * 0.92), y: torchY + 4 }
+    ],
+    gate: { x: gx + r, y: floorY }
+  };
+}

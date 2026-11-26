@@ -2,12 +2,14 @@
 // It never decides an authoritative result and only ever reads its OWN role,
 // question and submissions.
 
-import { signIn, handoff } from './auth.js';
+import { signIn, lastRoom } from './auth.js';
 import { db, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp } from './firebase.js';
-import { PHASE, ROLE, HUNTER_CHAR_ID } from './gameConfig.js';
+import { PHASE, ROLE, HUNTER_CHAR_ID, PHASE_LABEL } from './gameConfig.js';
 import { buildMap, ROOM_IDS, ADJACENCY } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
-import { showGameOverFx } from './pixelDecor.js';
+import { renderGameOverView } from './gameOverView.js';
+import { renderLobbyHall } from './lobbyView.js';
+import { startMatchClock } from './matchClock.js';
 import { playResultSequence } from './effects.js';
 
 const $ = (id) => document.getElementById(id);
@@ -48,16 +50,19 @@ $('lobby-code').textContent = code;
 init().catch(e => console.error(e));
 
 async function init() {
-  if (!handoff.take(code)) { location.href = 'index.html'; return; }
-
   const user = await signIn();
   uid = user.uid;
 
   const mine = await get(path('players/' + uid));
-  if (!mine.exists()) { location.href = 'index.html'; return; }
+  if (!mine.exists()) { lastRoom.clear(code); location.href = 'index.html'; return; }
+  lastRoom.save(code, 'player', mine.val().displayName || '');
 
-  await update(path('players/' + uid), { connected: true });
-  onDisconnect(path('players/' + uid)).remove();
+  // Dropping out only marks this player offline; coming back (same device) rejoins.
+  onValue(ref(db, '.info/connected'), s => {
+    if (s.val() !== true || leaving) return;
+    onDisconnect(path('players/' + uid + '/connected')).set(false);
+    update(path('players/' + uid), { connected: true }).catch(() => {});
+  });
 
   mapApi = buildMap($('stage'));
   chars = new CharacterRenderer(mapApi);
@@ -67,7 +72,13 @@ async function init() {
   onValue(ref(db, '.info/serverTimeOffset'), s => { serverOffset = s.val() || 0; });
   onValue(path('meta'), s => { if (!s.exists()) goHome(); });
   onValue(path('public/closed'), s => { if (s.val()) goHome(); });
-  onValue(path('players'), s => { players = s.val() || {}; me = players[uid] || {}; syncCharacters(); render(); });
+  onValue(path('players'), s => {
+    players = s.val() || {};
+    // Removed by the Host (e.g. left behind at Start): nothing to rejoin.
+    if (!players[uid]) { lastRoom.clear(code); goHome(); return; }
+    me = players[uid] || {};
+    syncCharacters(); render();
+  });
   onValue(path('roles/' + uid), s => {
     myRole = s.val();
     syncPositionsSubscription();
@@ -83,6 +94,7 @@ async function init() {
     $(id).addEventListener('click', leaveRoom);
   }
   $('q-submit').addEventListener('click', submitAnswer);
+  startMatchClock($('game-clock'), () => pub.gameEndsAt, serverNow);
 }
 
 /**
@@ -135,7 +147,9 @@ async function leaveRoom() {
   leaving = true;
   stopCountdown();
   if (positionsUnsub) { positionsUnsub(); positionsUnsub = null; }
+  lastRoom.clear(code);
   try {
+    await onDisconnect(path('players/' + uid + '/connected')).cancel();
     await remove(path('actions/moves/' + uid));
     await remove(path('actions/answers/' + uid));
     await remove(path('actions/hunter/' + uid));
@@ -191,8 +205,10 @@ function render() {
     $('bar').classList.toggle('hidden', !inGame || over);
     $('board').classList.toggle('hidden', !inGame || over);
     $('gameover').classList.toggle('hidden', !over);
-    $('phase').textContent = over ? '' : (pub.phase || '');
-    $('round').textContent = pub.totalRounds ? 'ROUND ' + (pub.round || 1) + ' / ' + pub.totalRounds : '';
+    $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
+    $('round').textContent = pub.totalRounds ? 'รอบ ' + (pub.round || 1) + '/' + pub.totalRounds : '';
+    $('host-away').classList.toggle('hidden', !(inGame && !over && pub.hostOnline === false));
+    renderRoleBadge(inGame && !over);
 
     if (!inGame) renderLobby();
     else if (over) renderGameOver();
@@ -210,21 +226,17 @@ function render() {
 function renderLobby() {
   $('quiz').classList.add('hidden');
   $('controls').innerHTML = '';
-  const ul = $('player-list');
-  ul.innerHTML = '';
-  const names = Object.values(players).map(p => p.displayName || '?');
-  if (!names.length) {
-    const li = document.createElement('li');
-    li.className = 'empty';
-    li.textContent = 'waiting';
-    ul.appendChild(li);
-    return;
-  }
-  for (const name of names) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    ul.appendChild(li);
-  }
+  renderLobbyHall($('player-list'), players, uid);
+  $('player-count').textContent = Object.values(players).filter(p => p.connected !== false).length + ' คน';
+}
+
+/** Small badge: which side am I on (only I can see my role). */
+function renderRoleBadge(show) {
+  const el = $('role-badge');
+  if (!show || !myRole) { el.classList.add('hidden'); return; }
+  el.classList.remove('hidden');
+  el.textContent = isHunter() ? '☠ HUNTER' : '⚔ ผู้เล่น';
+  el.classList.toggle('hunter', isHunter());
 }
 
 const moveExpired = () => !!(pub.moveDeadline && serverNow() >= pub.moveDeadline);
@@ -245,7 +257,7 @@ function renderMove() {
 
   if (!isAlive()) {
     $('controls').innerHTML = '';
-    $('status').textContent = 'out';
+    $('status').textContent = 'ตกรอบ';
     return;
   }
 
@@ -260,7 +272,7 @@ function renderMove() {
       mapApi.setRoomState(id, expired ? 'blocked' : state);
     }
     renderHunterControls(expired);
-    $('status').textContent = expired ? 'locked in' : '';
+    $('status').textContent = expired ? 'ล็อกแล้ว' : 'เลือกห้องเป้าหมาย';
   } else {
     const here = positions[uid] || null;
     for (const id of ROOM_IDS) {
@@ -270,7 +282,7 @@ function renderMove() {
     if (myMove && myMove.target) mapApi.setRoomState(myMove.target, 'chosen');
     $('controls').innerHTML = '';
     $('controls').dataset.mode = '';
-    $('status').textContent = (myMove && myMove.target) ? 'wait' : (expired ? 'no move' : '');
+    $('status').textContent = (myMove && myMove.target) ? 'รอคนอื่น…' : (expired ? 'ไม่ได้เดิน' : 'เลือกห้องข้างๆ');
   }
 }
 
@@ -285,7 +297,7 @@ function renderHunterControls(expired) {
   for (const mode of ['target', 'lock']) {
     const b = document.createElement('button');
     b.className = 'btn' + (hunterMode === mode ? ' active' : '');
-    b.textContent = mode === 'target' ? 'Target' : 'Lock';
+    b.textContent = mode === 'target' ? '🎯 ห้องเป้าหมาย' : '🔒 ปิดห้อง';
     b.disabled = expired;
     b.addEventListener('click', () => { hunterMode = mode; el.dataset.mode = ''; render(); });
     wrap.appendChild(b);
@@ -313,7 +325,7 @@ function renderQuiz() {
 
   if (!isAlive() || !myCard) {
     $('quiz').classList.add('hidden');
-    $('status').textContent = isAlive() ? 'wait' : 'out';
+    $('status').textContent = isAlive() ? 'รอคนอื่น…' : 'ตกรอบ';
     return;
   }
 
@@ -347,7 +359,7 @@ function renderQuiz() {
     c.disabled = submitted || expired;
   });
   $('q-submit').disabled = submitted || expired || !selectedChoice;
-  $('status').textContent = submitted ? 'wait' : (expired ? 'no answer' : '');
+  $('status').textContent = submitted ? 'ส่งแล้ว รอคนอื่น…' : (expired ? 'หมดเวลา' : '');
 }
 
 async function submitAnswer() {
@@ -368,17 +380,8 @@ async function renderResult() {
 }
 
 function renderGameOver() {
-  const go = pub.gameOver || {};
-  $('go-title').textContent = go.winner === ROLE.HUNTER ? 'HUNTER WINS' : 'PLAYERS WIN';
-  showGameOverFx($('go-fx'), go.winner === ROLE.HUNTER);
-  $('go-reveal').textContent = go.hunterName ? 'Hunter: ' + go.hunterName : '';
-  const ul = $('go-survivors');
-  ul.innerHTML = '';
-  for (const name of go.survivors || []) {
-    const li = document.createElement('li');
-    li.textContent = name;
-    ul.appendChild(li);
-  }
+  lastRoom.clear(code);       // nothing left to rejoin
+  renderGameOverView(pub.gameOver || {}, uid);
 }
 
 /* ---------------- countdown (display only) ---------------- */
