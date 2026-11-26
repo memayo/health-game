@@ -14,6 +14,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Stamp the commit into every relative module/CSS URL, so a browser holding
+      # an older cached copy can never mix old and new files after a deploy.
+      - name: Version asset URLs
+        run: |
+          V="${GITHUB_SHA::7}"
+          find js -name '*.js' -print0 | xargs -0 sed -i -E "s#(from[[:space:]]*['\"]\.{1,2}/[^'\"?]+\.js)(['\"])#\1?v=$V\2#g"
+          sed -i -E "s#((src|href)=\"(js|css)/[^\"?]+\.(js|css))\"#\1?v=$V\"#g; s#(from[[:space:]]*'\./js/[^'?]+\.js)'#\1?v=$V'#g" *.html
+          grep -c "?v=$V" index.html host.html game.html js/host.js
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
