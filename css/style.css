@@ -514,3 +514,4 @@ body.host .host-layout .board{flex:1 1 auto;min-width:0}
   font-family:var(--font-read);font-size:13px;color:#ffd2cc;background:#6b1a1a;padding:3px 8px;
   box-shadow:0 0 0 2px var(--danger);animation:clockblink 1.2s steps(2) infinite;
 }
+.role-badge.dead{background:#584d68;color:#f2ead7}

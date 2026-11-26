@@ -245,8 +245,9 @@ function renderRoleBadge(show) {
   const el = $('role-badge');
   if (!show || !myRole) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
-  el.textContent = isHunter() ? '☠ HUNTER' : '⚔ ผู้เล่น';
+  el.textContent = isHunter() ? '☠ HUNTER' : (isAlive() ? '⚔ ผู้เล่น' : '💀 ตกรอบ (ยังเก็บคะแนนได้)');
   el.classList.toggle('hunter', isHunter());
+  el.classList.toggle('dead', !isHunter() && !isAlive());
 }
 
 const moveExpired = () => !!(pub.moveDeadline && serverNow() >= pub.moveDeadline);
@@ -266,8 +267,10 @@ function renderMove() {
   mapApi.clearRoomStates();
 
   if (!isAlive()) {
+    // Eliminated: no moves any more, but still answers questions for points.
     $('controls').innerHTML = '';
-    $('status').textContent = 'ตกรอบ';
+    $('status').textContent = 'ตกรอบ · รอตอบคำถามเก็บคะแนน';
+    for (const id of ROOM_IDS) mapApi.setRoomState(id, 'blocked');
     return;
   }
 
@@ -337,7 +340,7 @@ function renderQuiz() {
     }
   }
 
-  if (!isAlive() || !myCard) {
+  if (!myCard) {
     $('quiz').classList.add('hidden');
     $('status').textContent = isAlive() ? 'รอคนอื่น…' : 'ตกรอบ';
     return;
@@ -377,7 +380,7 @@ function renderQuiz() {
 }
 
 async function submitAnswer() {
-  if (!selectedChoice || !isAlive() || quizExpired()) return;
+  if (!selectedChoice || quizExpired()) return;   // eliminated Players answer too (score only)
   $('q-submit').disabled = true;
   await set(path('actions/answers/' + uid), { choice: selectedChoice, at: serverTimestamp() });
 }

@@ -203,6 +203,11 @@ clock shows the time left, and the lobby estimates which will run out first.
 
 ## Leaderboard
 
+Eliminated Players stay in the match as scorers: they can no longer move (their sprite stays greyed out and
+is never attacked), but they still get every question and their answers count on
+the leaderboard (`quizIds()` in the Host; the `actions/answers` rule allows anyone with a
+role). Duplicate names are numbered on join ("มิ้นท์ 2"); a rejoining player keeps theirs.
+
 For every question the Host records, per participant (Hunter included), whether it was
 correct and how long the answer took (`answer.at - quizStartedAt`; no answer = the full
 time limit) in `hostPrivate/stats`. The game-over screen ranks by most correct answers, then

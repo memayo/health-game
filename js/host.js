@@ -442,7 +442,7 @@ function renderHostQuestion() {
 function renderAnsweredCount() {
   const el = $('hq-count');
   if (!el) return;
-  const need = activeIds();
+  const need = quizIds();
   const ans = actions.answers || {};
   const n = need.filter(id => ans[id] && ans[id].choice).length;
   el.textContent = pub.phase === PHASE.RESULT ? 'เฉลย' : 'ตอบแล้ว ' + n + '/' + need.length;
@@ -547,6 +547,12 @@ function activeIds() {
 /** Active and online: the only ones a phase waits for before its deadline. */
 const waitingFor = () => activeIds().filter(id => players[id].connected !== false);
 
+/** Everyone who answers questions: eliminated Players too (score only, no moves). */
+function quizIds() {
+  return Object.keys(players).filter(id => roles[id]);
+}
+const quizWaitingFor = () => quizIds().filter(id => players[id].connected !== false);
+
 function tick() {
   if (resolving || closing || !pub.phase) return;
   if (pub.phase === PHASE.MOVE && moveReady()) guard(resolveMovePhase);
@@ -573,12 +579,12 @@ function moveReady() {
 }
 
 function quizReady() {
-  const all = activeIds();
+  const all = quizIds();
   if (!all.length) return false;
   const ans = actions.answers || {};
   const now = serverNow();
   // Offline participants are not waited for: no answer counts as wrong.
-  const need = waitingFor();
+  const need = quizWaitingFor();
   if (!need.length) return all.every(id => { const c = quizCards[id]; return !c || (c.deadline && now >= c.deadline); });
   return need.every(id => {
     if (ans[id] && ans[id].choice) return true;
@@ -644,7 +650,7 @@ async function resolveMovePhase() {
   // Clear only the cards of users who are no longer active; nulling the whole
   // "questions" node here would collide with the per-uid writes below (Firebase
   // rejects an update containing both a path and its descendant).
-  const active = new Set(activeIds());
+  const active = new Set(quizIds());   // eliminated Players still get the question
   for (const id of Object.keys(players)) {
     if (!active.has(id)) updates['questions/' + id] = null;
   }

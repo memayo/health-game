@@ -81,11 +81,18 @@ $('join-form').addEventListener('submit', async (ev) => {
       if (phaseSnap.val() !== PHASE.LOBBY) { $('msg-join').textContent = 'ห้องนี้เริ่มเล่นไปแล้ว'; return; }
     }
 
+    // Same name already in the room? Add a number: "มิ้นท์", "มิ้นท์ 2", "มิ้นท์ 3"...
+    // Someone rejoining keeps the name they already have.
+    let finalName = mine.exists() ? (mine.val().displayName || name) : name;
+    if (!mine.exists()) {
+      const others = (await get(ref(db, 'rooms/' + code + '/players'))).val() || {};
+      finalName = uniqueName(name, Object.values(others).map(p => p.displayName || ''));
+    }
     await update(ref(db, 'rooms/' + code + '/players/' + user.uid), {
-      displayName: mine.exists() ? (mine.val().displayName || name) : name,
+      displayName: finalName,
       connected: true
     });
-    lastRoom.save(code, 'player', name);
+    lastRoom.save(code, 'player', finalName);
     location.href = 'game.html?room=' + code;
   } catch (e) {
     console.error(e);
@@ -94,6 +101,19 @@ $('join-form').addEventListener('submit', async (ev) => {
     busy(btn, false, true);
   }
 });
+
+/** First free name: base, then "base 2", "base 3"... (fits the 20-char rule). */
+export function uniqueName(base, taken) {
+  const norm = (n) => String(n).trim().toLowerCase();
+  const used = new Set(taken.map(norm));
+  if (!used.has(norm(base))) return base;
+  for (let i = 2; i < 100; i++) {
+    const suffix = ' ' + i;
+    const cand = base.slice(0, 20 - suffix.length) + suffix;
+    if (!used.has(norm(cand))) return cand;
+  }
+  return base.slice(0, 15) + ' ' + Math.floor(Math.random() * 9000 + 1000);
+}
 
 /* ---------------- rejoin ---------------- */
 

@@ -71,7 +71,7 @@
             ".read": "auth != null && root.child('rooms/' + $room + '/meta/hostUid').val() === auth.uid",
             "$uid": {
               ".read": "auth != null && auth.uid === $uid",
-              ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $room + '/public/phase').val() === 'quiz' && root.child('rooms/' + $room + '/players/' + $uid + '/alive').val() === true",
+              ".write": "auth != null && auth.uid === $uid && root.child('rooms/' + $room + '/public/phase').val() === 'quiz' && root.child('rooms/' + $room + '/roles/' + $uid).exists()",
               "choice": { ".validate": "newData.isString() && newData.val().length === 1" },
               "at": { ".validate": "newData.val() === now" },
               "$other": { ".validate": false }
