@@ -20,9 +20,15 @@
   </header>
 
   <section id="lobby" class="screen lobby lobby-host">
-    <div class="sign">
-      <span class="sign-label">รหัสห้อง · ให้ผู้เล่นกด "เข้าร่วมเกม"</span>
-      <div id="lobby-code" class="lobby-code"></div>
+    <div class="sign sign-qr">
+      <div class="sign-main">
+        <span class="sign-label">รหัสห้อง · กด "เข้าร่วมเกม" แล้วใส่รหัส</span>
+        <div id="lobby-code" class="lobby-code"></div>
+      </div>
+      <div class="qr-box">
+        <canvas id="join-qr" class="join-qr" aria-label="QR เข้าห้อง"></canvas>
+        <span class="qr-label">สแกนเข้าห้อง</span>
+      </div>
     </div>
     <div class="lobby-grid">
       <div class="hall">

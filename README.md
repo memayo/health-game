@@ -233,6 +233,17 @@ by the smaller total answer time (`rankLeaderboard`).
 Shield (this turn only): successful move **and** correct answer.
 Attack: players in the target room survive with a shield, otherwise they are eliminated.
 
+## Joining by QR and the tutorial
+
+- The Host's room sign shows a QR code (`js/joinQr.js`, generated locally with the vendored
+  MIT `js/vendor/qrcode.js`). It opens `index.html?room=CODE`, which jumps to Join with the
+  code filled in, so a player only types a name.
+- **วิธีเล่น** (`js/tutorial.js`) is available to the Host and to Players waiting in the
+  lobby, and closes itself when the game starts. Six short pages, each with 2–3 lines of
+  Thai and a looping demo built from the real map, characters and effects: roles, moving,
+  the Hunter's target and lock, the shared question, shields and the attack, and the end
+  of the game with the leaderboard. It touches no Firebase or game state.
+
 ## Art and effects (pixelfx)
 
 The look is a pixel-art dungeon drawn in code, no image files:

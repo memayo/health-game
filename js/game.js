@@ -10,6 +10,7 @@ import { CharacterRenderer } from './characterRenderer.js';
 import { renderGameOverView } from './gameOverView.js';
 import { renderLobbyHall } from './lobbyView.js';
 import { startMatchClock } from './matchClock.js';
+import { openTutorial, closeTutorial } from './tutorial.js';
 import { playResultSequence } from './effects.js';
 
 const $ = (id) => document.getElementById(id);
@@ -94,6 +95,8 @@ async function init() {
     $(id).addEventListener('click', leaveRoom);
   }
   $('q-submit').addEventListener('click', submitAnswer);
+  // Local only: the tutorial never touches Firebase or game state.
+  $('tutorial-open').addEventListener('click', openTutorial);
   startMatchClock($('game-clock'), () => pub.gameEndsAt, serverNow);
 }
 
@@ -210,6 +213,7 @@ function render() {
     $('host-away').classList.toggle('hidden', !(inGame && !over && pub.hostOnline === false));
     renderRoleBadge(inGame && !over);
 
+    if (inGame) closeTutorial();      // the game started: back to the real map
     if (!inGame) renderLobby();
     else if (over) renderGameOver();
     else if (pub.phase === PHASE.MOVE) renderMove();

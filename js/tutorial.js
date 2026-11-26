@@ -1,88 +1,68 @@
-// HOST-ONLY tutorial presentation.
+// "How to play" for Host and Players.
 //
-// Completely isolated from the live game: no Firebase, no game CharacterRenderer,
-// no real phases, questions, timers or actions. It builds its own DOM, its own
-// simplified 6-room map and its own sprite instances, and every timer it creates
-// is tracked so a page change or close cancels all of them.
-//
-// The only shared code it reuses is SpriteAnimator + CHARACTER_ASSETS, which are
-// pure DOM/asset helpers that hold no game state.
+// Isolated from the live game: no Firebase, no real phases, questions, timers or
+// actions. Each page builds its OWN demo map (the real dungeon map, characters and
+// pixel effects, so it looks exactly like the game) and everything it creates is
+// tracked and torn down on page change or close.
 
+import { buildMap } from './map.js';
+import { CharacterRenderer } from './characterRenderer.js';
+import { playResultSequence, wait } from './effects.js';
 import { SpriteAnimator } from './spriteAnimator.js';
+import { LiveSprite } from './pixelStage.js';
 import { CHARACTER_ASSETS } from './assetConfig.js';
+import { HUNTER_CHAR_ID } from './gameConfig.js';
 
-/* ---------------- local config ---------------- */
+/* ---------------- config ---------------- */
 
 const TUT = Object.freeze({
-  cursorGlide: 700,     // fake cursor travel
-  clickHold: 220,
-  walk: 900,            // demo walk between rooms
-  beat: 600,            // generic pause between steps
-  hold: 1400,           // pause on the final state
-  loopGap: 900,         // pause before replaying
-  emergeWait: 1000      // mirrors the real 1s emerge -> attack beat
+  cursorGlide: 650,
+  beat: 700,
+  read: 1600,     // time to read a banner
+  loopGap: 1800   // pause before a page replays
 });
 
-// Simplified copy of the real map. Deliberately local so the tutorial can never
-// disturb the real map module.
-const ROOMS = [
-  { id: 'A', col: 0, row: 0 }, { id: 'B', col: 1, row: 0 }, { id: 'C', col: 2, row: 0 },
-  { id: 'D', col: 0, row: 1 }, { id: 'E', col: 1, row: 1 }, { id: 'F', col: 2, row: 1 }
-];
-const ADJ = {
-  A: ['B', 'D'], B: ['A', 'C', 'E'], C: ['B', 'F'],
-  D: ['A', 'E'], E: ['B', 'D', 'F'], F: ['C', 'E']
-};
-
-const PAGES = ['SURVIVE', 'MOVE', 'HUNT', 'SHIELD', 'LOCK'];
-
-/* ---------------- lifecycle state ---------------- */
+/* ---------------- lifecycle ---------------- */
 
 let root = null;
 let stageEl = null;
 let page = 0;
 let paused = false;
-let generation = 0;               // bumped on every teardown; stale steps abort
+let generation = 0;
 let open = false;
-
 const timeouts = new Set();
-const sprites = [];               // SpriteAnimator instances to destroy
+const disposables = [];          // anything with destroy()
 let onKey = null;
 
-/** Tracked setTimeout. Every tutorial delay goes through here. */
 function later(fn, ms) {
   const id = setTimeout(() => { timeouts.delete(id); fn(); }, ms);
   timeouts.add(id);
   return id;
 }
 
-/** Cancel every tutorial timer and destroy every tutorial sprite animator. */
 function stopEverything() {
   generation++;
   for (const id of timeouts) clearTimeout(id);
   timeouts.clear();
-  while (sprites.length) {
-    const s = sprites.pop();
-    try { s.destroy(); } catch { /* already gone */ }
+  while (disposables.length) {
+    const d = disposables.pop();
+    try { d.destroy(); } catch { /* already gone */ }
   }
 }
 
-/**
- * Run a timeline of [delayFromPrevious, fn] steps, then loop.
- * Steps belonging to an old generation are dropped, so switching pages or
- * closing can never let an old demo keep painting.
- */
-function runTimeline(steps, restart) {
+/** Steps of [delayFromPrevious, fn]; fn may return a promise (awaited). Then replays. */
+function runSteps(steps) {
   const mine = generation;
-  let t = 0;
-  for (const [dt, fn] of steps) {
-    t += dt;
-    later(() => { if (generation === mine && !paused) fn(); }, t);
-  }
-  later(() => { if (generation === mine && !paused) restart(); }, t + TUT.loopGap);
+  (async () => {
+    for (const [dt, fn] of steps) {
+      await new Promise(r => later(r, dt));
+      if (generation !== mine || paused) return;
+      await fn();
+      if (generation !== mine || paused) return;
+    }
+    later(() => { if (generation === mine && !paused) show(); }, TUT.loopGap);
+  })().catch(e => console.error(e));
 }
-
-/* ---------------- tiny DOM helpers ---------------- */
 
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
@@ -91,326 +71,260 @@ const el = (tag, cls, text) => {
   return n;
 };
 
-/* ---------------- demo map ---------------- */
+/* ---------------- demo building blocks ---------------- */
 
-function buildDemoMap(host) {
-  const map = el('div', 'tut-map');
-  const rooms = {};
-  for (const r of ROOMS) {
-    const room = el('div', 'tut-room');
-    room.dataset.room = r.id;
-    room.style.gridColumn = String(r.col + 1);
-    room.style.gridRow = String(r.row + 1);
-    room.appendChild(el('span', 'tut-room-label', r.id));
-    room.appendChild(el('span', 'tut-pipe'));
-    rooms[r.id] = room;
-    map.appendChild(room);
-  }
-  const layer = el('div', 'tut-layer');
-  map.appendChild(layer);
-  host.appendChild(map);
+/** The real dungeon map + characters, in a box inside the tutorial. */
+function demoMap(host) {
+  const box = el('div', 'tut-board');
+  const st = el('div', 'tut-stage-map');
+  box.appendChild(st);
+  host.appendChild(box);
+  const map = buildMap(st);
+  const chars = new CharacterRenderer(map);
+  disposables.push({ destroy: () => { chars.destroy(); map.destroy(); } });
+  chars.add(HUNTER_CHAR_ID, { kind: 'hunter', roomId: null, hidden: true });
 
   const api = {
-    map, rooms, layer,
-    state(id, s) { if (rooms[id]) rooms[id].dataset.state = s || ''; },
-    clear() { for (const r of ROOMS) api.state(r.id, ''); },
-    /** Room centre in map coordinates. */
-    center(id) {
-      const r = rooms[id];
-      return r ? { x: r.offsetLeft + r.offsetWidth / 2, y: r.offsetTop + r.offsetHeight / 2 }
-        : { x: 0, y: 0 };
+    map, chars,
+    room: (L) => 'room' + L,
+    state(L, s) { map.setRoomState('room' + L, s); },
+    clear() { map.clearRoomStates(); },
+    add(id, name, L) { chars.add(id, { kind: 'player', name, roomId: 'room' + L }); },
+    banner(text, cls = '', ms = TUT.read) {
+      const b = el('div', 'tut-banner ' + cls, text);
+      map.stage.appendChild(b);
+      later(() => b.remove(), ms);
     },
-    pipe(id) {
-      const r = rooms[id], p = r && r.querySelector('.tut-pipe');
-      if (!p) return api.center(id);
-      return { x: r.offsetLeft + p.offsetLeft + p.offsetWidth / 2,
-               y: r.offsetTop + p.offsetTop + p.offsetHeight / 2 };
-    },
-    /** Where a character stands (feet at the anchor). */
-    anchor(id, slot = 0) {
-      const c = api.center(id);
-      return { x: c.x + slot * 26, y: c.y + 14 };
-    },
-    flash(id, cls) {
-      const c = api.center(id);
-      const fx = el('div', 'tut-fx ' + cls);
-      fx.style.transform = `translate(${c.x}px,${c.y}px) translate(-50%,-50%)`;
-      layer.appendChild(fx);
-      later(() => fx.remove(), 900);
-    },
-    banner(text, cls) {
-      const b = el('div', 'tut-banner ' + (cls || ''), text);
-      map.appendChild(b);
-      later(() => b.remove(), TUT.hold);
-      return b;
-    }
+    cursor: makeCursor(map)
   };
   return api;
 }
 
-/* ---------------- demo characters (own instances) ---------------- */
-
-function makeChar(mapApi, kind, name) {
-  const wrap = el('div', 'tut-char tut-char-' + kind);
-  const sprite = el('div', 'sprite');
-  wrap.appendChild(sprite);
-  if (name) wrap.appendChild(el('div', 'tut-name', name));
-  mapApi.layer.appendChild(wrap);
-
-  // Own SpriteAnimator instance - never registered with the game's renderer.
-  const anim = new SpriteAnimator(sprite, CHARACTER_ASSETS[kind] || CHARACTER_ASSETS.player);
-  sprites.push(anim);
-
-  const c = { wrap, anim, room: null, facing: 'down' };
-  c.place = (roomId, slot = 0) => {
-    c.room = roomId;
-    const p = mapApi.anchor(roomId, slot);
-    wrap.style.transition = 'none';
-    wrap.style.transform = `translate(${p.x}px,${p.y}px) translate(-50%,-100%)`;
-    anim.play('idle_' + c.facing);
-  };
-  c.show = (on) => { wrap.style.opacity = on ? '1' : '0'; };
-  c.walk = (roomId, ms = TUT.walk, slot = 0) => {
-    const from = mapApi.anchor(c.room || roomId, 0);
-    const to = mapApi.anchor(roomId, slot);
-    const dx = to.x - from.x, dy = to.y - from.y;
-    c.facing = Math.abs(dx) >= Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
-    c.room = roomId;
-    anim.play('walk_' + c.facing);
-    wrap.style.transition = `transform ${ms}ms linear`;
-    wrap.style.transform = `translate(${to.x}px,${to.y}px) translate(-50%,-100%)`;
-    later(() => anim.play('idle_' + c.facing), ms);
-  };
-  c.shield = () => {
-    const ring = el('div', 'tut-shield');
-    wrap.appendChild(ring);
-    later(() => ring.remove(), 900);
-  };
-  c.hit = () => {
-    wrap.classList.add('tut-hit');
-    later(() => wrap.classList.remove('tut-hit'), 600);
-  };
-  return c;
-}
-
-/* ---------------- fake cursor ---------------- */
-
-function makeCursor(mapApi) {
+function makeCursor(map) {
   const cur = el('div', 'tut-cursor');
   cur.innerHTML =
-    '<svg viewBox="0 0 24 24" width="26" height="26" aria-hidden="true">' +
+    '<svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">' +
     '<path d="M4 2 L20 12 L13 13.5 L16.5 21 L13.5 22.5 L10 15 L4 19 Z" ' +
-    'fill="#fff" stroke="#0b0d12" stroke-width="1.5" stroke-linejoin="round"/></svg>';
-  mapApi.map.appendChild(cur);
-  cur.style.transform = 'translate(-40px,-40px)';
-
+    'fill="#fff" stroke="#120f17" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+  map.stage.appendChild(cur);
+  cur.style.opacity = '0';
   return {
-    to(roomId, ms = TUT.cursorGlide) {
-      const c = mapApi.center(roomId);
-      cur.style.transition = `transform ${ms}ms cubic-bezier(.3,.7,.3,1)`;
+    to(L, ms = TUT.cursorGlide) {
+      const c = map.roomCenter('room' + L);
+      cur.style.opacity = '1';
+      cur.style.transition = `transform ${ms}ms cubic-bezier(.3,.7,.3,1),opacity 200ms`;
       cur.style.transform = `translate(${c.x}px,${c.y}px)`;
-    },
-    at(x, y, ms = TUT.cursorGlide) {
-      cur.style.transition = `transform ${ms}ms cubic-bezier(.3,.7,.3,1)`;
-      cur.style.transform = `translate(${x}px,${y}px)`;
     },
     click() {
       cur.classList.add('clicking');
       const ring = el('div', 'tut-click-ring');
       cur.appendChild(ring);
-      later(() => { cur.classList.remove('clicking'); ring.remove(); }, TUT.clickHold + 200);
+      later(() => { cur.classList.remove('clicking'); ring.remove(); }, 450);
     },
-    hide() { cur.style.opacity = '0'; },
-    show() { cur.style.opacity = '1'; }
+    hide() { cur.style.opacity = '0'; }
   };
+}
+
+/** A standing hero sprite (no map). */
+function hero(name, cls = '') {
+  const w = el('div', 'tut-hero ' + cls);
+  const s = el('div', 'sprite');
+  w.appendChild(s);
+  w.appendChild(el('span', 'tut-hero-name', name));
+  const anim = new SpriteAnimator(s, CHARACTER_ASSETS.player);
+  anim.setScale(3);
+  disposables.push(anim);
+  return w;
+}
+
+function skull(name) {
+  const w = el('div', 'tut-hero tut-hero-hunter');
+  const live = new LiveSprite('critters/flying-skull', { box: [28, 46], opts: { seed: 3, light: 0.9 }, scale: 2 });
+  disposables.push(live);
+  w.appendChild(live.el);
+  w.appendChild(el('span', 'tut-hero-name', name));
+  return w;
+}
+
+/** The page's short explanation: a few lines with an icon each. */
+function points(host, lines) {
+  const ul = el('ul', 'tut-points');
+  for (const [icon, text] of lines) {
+    const li = el('li');
+    li.append(el('span', 'tut-icon', icon), el('span', '', text));
+    ul.appendChild(li);
+  }
+  host.appendChild(ul);
+  return ul;
 }
 
 /* ---------------- pages ---------------- */
 
-function pageSurvive(host, setCaption) {
-  setCaption('เอาตัวรอดให้ครบทุกข้อ ถ้าผู้เล่นยังรอดอยู่ตอนจบ ฝั่งผู้เล่นชนะ');
-  const wrap = el('div', 'tut-survive');
-  const track = el('div', 'tut-rounds');
-  const pills = [];
-  for (let i = 1; i <= 6; i++) {
-    const p = el('div', 'tut-pill', i === 6 ? 'FINAL' : String(i));
-    pills.push(p); track.appendChild(p);
-  }
-  const outcome = el('div', 'tut-outcome', '');
-  wrap.append(track, outcome);
-  host.appendChild(wrap);
+const PAGES = [
+  { title: 'ใครเป็นใคร', build: pageRoles },
+  { title: 'เดิน', build: pageMove },
+  { title: 'Hunter', build: pageHunter },
+  { title: 'ตอบคำถาม', build: pageQuiz },
+  { title: 'โล่ & โจมตี', build: pageAttack },
+  { title: 'จบเกม', build: pageEnd }
+];
 
-  let playersWin = true;
-  const start = () => {
-    pills.forEach(p => { p.dataset.on = ''; p.dataset.dead = ''; });
-    outcome.textContent = '';
-    outcome.dataset.kind = '';
-
-    const steps = [];
-    const upto = playersWin ? 6 : 3;
-    for (let i = 0; i < upto; i++) {
-      steps.push([TUT.beat, () => { pills[i].dataset.on = '1'; }]);
-    }
-    if (playersWin) {
-      steps.push([TUT.beat, () => {
-        outcome.textContent = 'PLAYERS WIN';
-        outcome.dataset.kind = 'players';
-      }]);
-    } else {
-      steps.push([TUT.beat, () => {
-        for (let i = upto; i < 6; i++) pills[i].dataset.dead = '1';
-        outcome.textContent = 'HUNTER WINS';
-        outcome.dataset.kind = 'hunter';
-      }]);
-    }
-    steps.push([TUT.hold, () => {}]);
-    runTimeline(steps, () => { playersWin = !playersWin; start(); });
-  };
-  start();
+function pageRoles(host, say) {
+  const row = el('div', 'tut-cast');
+  const a = hero('มิ้นท์'), b = hero('บอส'), c = hero('พลอย');
+  const sk = skull('???');
+  sk.style.display = 'none';
+  row.append(a, b, c, sk);
+  host.appendChild(row);
+  points(host, [
+    ['🎲', 'เริ่มเกม ระบบสุ่มให้ 1 คนเป็น Hunter ที่เหลือเป็นผู้กล้า'],
+    ['🤫', 'ไม่มีใครรู้ว่าใครเป็น Hunter (ดูฝั่งตัวเองได้มุมบนจอ)'],
+    ['⚔', 'ผู้กล้าชนะ ถ้ายังมีคนรอดตอนจบเกม · ☠ Hunter ชนะ ถ้าผู้กล้าตกรอบหมด']
+  ]);
+  say('ทุกคนเข้ามาเป็นผู้กล้า…');
+  runSteps([
+    [TUT.read, () => { say('…แต่หนึ่งในนั้นคือ Hunter!'); c.classList.add('tut-shake'); }],
+    [900, () => { c.style.display = 'none'; sk.style.display = ''; sk.classList.add('tut-pop'); }],
+    [TUT.read, () => say('ผู้กล้าต้องเอาตัวรอด · Hunter ต้องล่าให้หมด')],
+    [TUT.read, () => {}]
+  ]);
 }
 
-function pageMove(host, setCaption) {
-  setCaption('แต่ละรอบเดินได้ 1 ห้องที่อยู่ติดกัน (ซ้าย ขวา บน ล่าง)');
-  const map = buildDemoMap(host);
-  const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'คุณ');
-
-  const start = () => {
-    map.clear();
-    cur.show();
-    player.place('A');
-    cur.at(-40, -40, 0);
-
-    runTimeline([
-      [TUT.beat, () => {
-        for (const r of ROOMS) map.state(r.id, ADJ.A.includes(r.id) ? 'reachable' : 'blocked');
-      }],
-      [TUT.beat, () => cur.to('B')],
-      [TUT.cursorGlide, () => { cur.click(); map.state('B', 'chosen'); }],
-      [TUT.beat, () => { map.clear(); player.walk('B'); }],
-      [TUT.walk + TUT.hold, () => {}],
-
-      // Brief secondary case: no click before the timer ends.
-      [TUT.beat, () => {
-        map.clear(); cur.hide(); player.place('A');
-        for (const r of ROOMS) map.state(r.id, ADJ.A.includes(r.id) ? 'reachable' : 'blocked');
-        map.banner('ไม่ได้เลือกห้อง', 'warn');
-      }],
-      [TUT.hold, () => { map.clear(); map.banner('อยู่ห้อง A ต่อ', 'warn'); }],
-      [TUT.hold, () => {}]
-    ], start);
-  };
-  start();
+function pageMove(host, say) {
+  const d = demoMap(host);
+  points(host, [
+    ['🟩', 'กดห้องสีเขียว = ห้องที่อยู่ติดกัน (ซ้าย ขวา บน ล่าง) ได้ 1 ห้อง'],
+    ['⏳', 'เลือกให้ทันเวลา ไม่เลือก = อยู่ห้องเดิม'],
+    ['👣', 'หมดเวลาแล้วทุกคนเดินพร้อมกัน']
+  ]);
+  d.add('me', 'คุณ', 'A');
+  say('คุณอยู่ห้อง A ห้องที่ไปได้จะเป็นสีเขียว');
+  runSteps([
+    [TUT.beat, () => { d.state('B', 'reachable'); d.state('D', 'reachable'); for (const L of 'CEF') d.state(L, 'blocked'); }],
+    [TUT.read, () => { say('กดห้อง B'); d.cursor.to('B'); }],
+    [TUT.cursorGlide + 100, () => { d.cursor.click(); d.clear(); d.state('B', 'chosen'); }],
+    [TUT.beat, () => { d.cursor.hide(); say('หมดเวลา → ทุกคนเดิน'); }],
+    [TUT.beat, () => { d.clear(); return d.chars.moveCharacter('me', d.room('B')); }],
+    [300, () => d.banner('มาถึงห้อง B แล้ว', 'good')],
+    [TUT.read, () => {}]
+  ]);
 }
 
-function pageHunt(host, setCaption) {
-  setCaption('Hunter มุดท่อไปโผล่ได้ทุกห้อง เลือกห้องเป้าหมายได้ 1 ห้อง');
-  const map = buildDemoMap(host);
-  const cur = makeCursor(map);
-  const hunter = makeChar(map, 'hunter', '');
-  const victim = makeChar(map, 'player', '');
-
-  const start = () => {
-    map.clear();
-    cur.show();
-    hunter.show(false);
-    victim.place('F');
-    hunter.place('F');
-    hunter.show(false);
-    cur.at(-40, -40, 0);
-
-    runTimeline([
-      [TUT.beat, () => { for (const r of ROOMS) map.state(r.id, 'selectable'); }],
-      [TUT.beat, () => cur.to('A')],
-      [TUT.cursorGlide, () => cur.to('F')],           // glide across distant rooms
-      [TUT.cursorGlide, () => { cur.click(); map.clear(); map.state('F', 'target'); }],
-      [TUT.beat, () => { cur.hide(); map.banner('เป้าหมาย: F', 'target'); }],
-      [TUT.hold, () => { map.flash('F', 'tut-fx-pipe'); }],
-      [TUT.beat, () => map.banner('ตอบถูก', 'good')],
-      [TUT.hold, () => { map.state('F', 'focus'); hunter.show(true); map.flash('F', 'tut-fx-emerge'); }],
-      [TUT.emergeWait, () => { map.flash('F', 'tut-fx-attack'); victim.hit(); }],
-      [TUT.hold, () => { victim.show(false); }],
-      [TUT.beat, () => { map.clear(); hunter.show(false); map.banner('Hunter ตอบผิด = ไม่ได้โจมตี', 'warn'); }],
-      [TUT.hold, () => {}]
-    ], start);
-  };
-  start();
+function pageHunter(host, say) {
+  const d = demoMap(host);
+  points(host, [
+    ['🎯', 'ห้องเป้าหมาย: Hunter จะโผล่ไปโจมตีห้องนี้ (เลือกได้ทุกห้อง)'],
+    ['🔒', 'ปิดห้อง: ใครเดินเข้าห้องนี้จะเดินไม่สำเร็จ (ห้องแดงเห็นตอนตอบคำถาม)'],
+    ['🙈', 'ตอนเดิน Hunter มองไม่เห็นผู้กล้า ต้องเดาใจเอา']
+  ]);
+  d.add('p1', 'คุณ', 'B');
+  say('ฝั่ง Hunter: เลือกห้องเป้าหมาย กับห้องที่จะปิด');
+  runSteps([
+    [TUT.beat, () => { for (const L of 'ABCDEF') d.state(L, 'selectable'); d.cursor.to('C'); }],
+    [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('C', 'target'); say('🎯 เป้าหมาย: ห้อง C'); }],
+    [TUT.read, () => d.cursor.to('E')],
+    [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('E', 'lock'); say('🔒 ปิดห้อง E'); }],
+    [TUT.read, () => { d.cursor.hide(); d.clear(); say('ผู้กล้าไม่รู้ว่าห้อง E ถูกปิด… แล้วเลือกเดินไป E'); d.state('E', 'chosen'); }],
+    [TUT.read, () => { d.clear(); d.state('E', 'locked-reveal'); d.chars.stayIdle('p1'); d.banner('ห้อง E ถูกปิด! เดินไม่สำเร็จ อยู่ที่ B', 'bad'); say('เดินไม่สำเร็จ = รอบนี้ไม่ได้โล่ (ดูหน้าถัดไป)'); }],
+    [TUT.read + 400, () => {}]
+  ]);
 }
 
-function pageShield(host, setCaption) {
-  setCaption('เดินสำเร็จ + ตอบถูก = ได้โล่ กันการโจมตีได้ 1 รอบ');
+function pageQuiz(host, say) {
+  const card = el('section', 'quiz tut-quiz');
+  const q = el('p', 'q-text', 'ควรล้างมืออย่างน้อยกี่วินาที');
+  const box = el('div', 'choices');
+  const btns = ['5 วินาที', '10 วินาที', '20 วินาที', '60 วินาที'].map((t, i) => {
+    const b = el('button', 'btn', 'ABCD'[i] + '. ' + t);
+    b.tabIndex = -1;
+    box.appendChild(b);
+    return b;
+  });
+  const sub = el('button', 'btn btn-primary', 'ส่งคำตอบ');
+  sub.id = 'tut-submit';
+  sub.tabIndex = -1;
+  sub.disabled = true;
+  card.append(q, box, sub);
+  host.appendChild(card);
+  const who = el('div', 'tut-answered');
+  const people = ['มิ้นท์', 'บอส', 'พลอย'].map(n => { const s = el('span', 'tut-chip', n); who.appendChild(s); return s; });
+  host.appendChild(who);
+  points(host, [
+    ['📜', 'ทุกคน (รวม Hunter) ได้คำถามข้อเดียวกัน และขึ้นบนจอ Host ด้วย'],
+    ['✅', 'ตอบถูก = ได้คะแนน · ตอบเร็ว = ได้เปรียบเมื่อคะแนนเท่ากัน'],
+    ['⏳', 'ไม่ตอบทันเวลา = นับว่าตอบผิด']
+  ]);
+  say('เลือกคำตอบ แล้วกด "ส่งคำตอบ"');
+  runSteps([
+    [TUT.read, () => { btns[2].classList.add('selected'); sub.disabled = false; }],
+    [TUT.beat, () => { sub.classList.add('tut-press'); }],
+    [300, () => { sub.disabled = true; for (const b of btns) b.disabled = true; people[0].classList.add('done'); people[0].textContent = 'มิ้นท์ ✓ 3.2 วิ'; say('ส่งแล้ว รอคนอื่น…'); }],
+    [900, () => { people[1].classList.add('done'); people[1].textContent = 'บอส ✓ 5.8 วิ'; }],
+    [900, () => { people[2].classList.add('done'); people[2].textContent = 'พลอย ✓ 9.1 วิ'; say('ทุกคนตอบครบ → ไปดูผลกัน'); }],
+    [TUT.read, () => {}]
+  ]);
+}
+
+function pageAttack(host, say) {
   const formula = el('div', 'tut-formula');
   formula.append(el('span', 'tut-term', 'เดินสำเร็จ'), el('span', 'tut-op', '+'),
-    el('span', 'tut-term', 'ตอบถูก'), el('span', 'tut-op', '='),
-    el('span', 'tut-term tut-term-key', 'ได้โล่'));
+    el('span', 'tut-term', 'ตอบถูก'), el('span', 'tut-op', '='), el('span', 'tut-term tut-term-key', '🛡 ได้โล่'));
   host.appendChild(formula);
-
-  const map = buildDemoMap(host);
-  const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'คุณ');
-  const hunter = makeChar(map, 'hunter', '');
-
+  const d = demoMap(host);
+  points(host, [
+    ['🛡', 'เดินสำเร็จ + ตอบถูก = ได้โล่ กันการโจมตีได้ในรอบนั้น'],
+    ['☠', 'Hunter ตอบถูก → โผล่จากท่อในห้องเป้าหมาย: มีโล่ = รอด, ไม่มีโล่ = ตกรอบ'],
+    ['🍀', 'Hunter ตอบผิด = รอบนั้นไม่มีการโจมตีเลย']
+  ]);
+  d.add('a', 'มิ้นท์ 🛡', 'E');
+  d.add('b', 'บอส', 'E');
+  say('มิ้นท์เดินสำเร็จ+ตอบถูก ได้โล่ · บอสตอบผิด ไม่มีโล่');
   const terms = formula.querySelectorAll('.tut-term');
-
-  const start = () => {
-    map.clear();
-    cur.show();
-    terms.forEach(t => { t.dataset.on = ''; });
-    player.show(true);
-    player.place('A');
-    hunter.place('B');
-    hunter.show(false);
-    cur.at(-40, -40, 0);
-
-    runTimeline([
-      [TUT.beat, () => { map.state('B', 'reachable'); map.state('D', 'reachable'); cur.to('B'); }],
-      [TUT.cursorGlide, () => { cur.click(); map.clear(); player.walk('B'); }],
-      [TUT.walk, () => { terms[0].dataset.on = '1'; cur.hide(); }],
-      [TUT.beat, () => map.banner('ตอบถูก', 'good')],
-      [TUT.beat, () => { terms[1].dataset.on = '1'; }],
-      [TUT.beat, () => { terms[2].dataset.on = '1'; player.shield(); }],
-      [TUT.beat, () => { map.state('B', 'target'); map.banner('เป้าหมาย: B', 'target'); }],
-      [TUT.hold, () => { map.state('B', 'focus'); hunter.show(true); map.flash('B', 'tut-fx-emerge'); }],
-      [TUT.emergeWait, () => { map.flash('B', 'tut-fx-attack'); player.shield(); }],
-      [TUT.beat, () => map.banner('โล่กันไว้ได้!', 'good')],
-      [TUT.hold, () => {}]
-    ], start);
-  };
-  start();
+  runSteps([
+    [TUT.beat, () => terms[0].dataset.on = '1'],
+    [500, () => terms[1].dataset.on = '1'],
+    [500, () => terms[2].dataset.on = '1'],
+    [TUT.read, () => say('Hunter ตอบถูก และเลือกห้อง E…')],
+    [TUT.beat, async () => {
+      await playResultSequence(d.map, d.chars, {
+        hunterCorrect: true, hunterTarget: d.room('E'),
+        outcomes: { a: 'shielded', b: 'eliminated' }
+      });
+    }],
+    [200, () => { d.banner('มิ้นท์รอดเพราะโล่ · บอสตกรอบ', '', TUT.read + 600); say('ถ้า Hunter ตอบผิด จะไม่มีการโจมตีเลย'); }],
+    [TUT.read + 600, () => {}]
+  ]);
 }
 
-function pageLock(host, setCaption) {
-  setCaption('Hunter ปิดห้องได้ 1 ห้องต่อรอบ ใครเดินเข้าห้องนั้นจะเดินไม่สำเร็จ');
-  const map = buildDemoMap(host);
-  const cur = makeCursor(map);
-  const player = makeChar(map, 'player', 'คุณ');
-
-  const start = () => {
-    map.clear();
-    cur.show();
-    player.place('A');
-    cur.at(-40, -40, 0);
-
-    runTimeline([
-      [TUT.beat, () => { map.state('B', 'reachable'); map.state('D', 'reachable'); cur.to('B'); }],
-      [TUT.cursorGlide, () => { cur.click(); map.state('B', 'chosen'); }],
-      [TUT.beat, () => { cur.hide(); map.banner('Hunter ปิดห้อง B', 'bad'); }],
-      [TUT.beat, () => { map.clear(); map.state('B', 'lock'); }],
-      [TUT.hold, () => { player.place('A'); map.banner('เดินไม่สำเร็จ', 'bad'); }],
-      [TUT.hold, () => map.banner('ตอบถูก', 'good')],
-      [TUT.hold, () => map.banner('ไม่ได้โล่', 'bad')],
-      [TUT.hold, () => {
-        map.clear();
-        map.state('E', 'target'); map.state('B', 'lock');
-        map.banner('เป้าหมาย = เดาใจ · ปิดห้อง = ดักทาง', '');
-      }],
-      [TUT.hold, () => {}]
-    ], start);
-  };
-  start();
+function pageEnd(host, say) {
+  const ol = el('ol', 'go-board tut-board-lb');
+  const rows = [
+    [1, 'มิ้นท์', '5 ข้อ', '21.4 วิ', 'lb-gold'],
+    [2, 'พลอย ☠', '5 ข้อ', '30.2 วิ', 'lb-silver'],
+    [3, 'บอส', '3 ข้อ', '18.0 วิ', 'lb-bronze lb-out']
+  ];
+  const lis = rows.map(([r, n, s, t, cls]) => {
+    const li = el('li', 'lb-row ' + cls);
+    li.append(el('span', 'lb-rank', String(r)), el('span', 'lb-name', n), el('span', 'lb-score', s), el('span', 'lb-time', t));
+    li.style.visibility = 'hidden';
+    ol.appendChild(li);
+    return li;
+  });
+  host.appendChild(ol);
+  points(host, [
+    ['🏁', 'เกมจบเมื่อ: หมดเวลา · คำถามหมด · หรือผู้กล้าตกรอบหมด'],
+    ['🏆', 'ตารางคะแนน: ตอบถูกมากสุดได้ที่ 1 ถ้าเท่ากัน ใครใช้เวลาตอบรวมน้อยกว่าชนะ'],
+    ['🔄', 'หลุดกลางเกม? เปิดเว็บใหม่ แล้วกด "กลับเข้าห้อง"']
+  ]);
+  say('จบเกมแล้วดูตารางคะแนนกัน');
+  runSteps([
+    [TUT.beat, () => { lis[0].style.visibility = ''; }],
+    [400, () => { lis[1].style.visibility = ''; }],
+    [400, () => { lis[2].style.visibility = ''; }],
+    [TUT.beat, () => { lis[0].classList.add('tut-glow'); lis[1].classList.add('tut-glow'); say('มิ้นท์กับพลอยถูก 5 ข้อเท่ากัน → มิ้นท์ตอบเร็วกว่า ได้ที่ 1'); }],
+    [TUT.read + 1200, () => {}]
+  ]);
 }
-
-const BUILDERS = [pageSurvive, pageMove, pageHunt, pageShield, pageLock];
 
 /* ---------------- shell ---------------- */
 
@@ -419,56 +333,57 @@ function build() {
   root.id = 'tutorial';
 
   const box = el('div', 'tut-box');
+  const head = el('div', 'tut-head');
+  const step = el('span', 'tut-step');
   const title = el('h1', 'tut-title');
-  title.id = 'tut-title';
+  head.append(step, title);
   const stage = el('div', 'tut-stage');
-  stage.id = 'tut-stage';
   const caption = el('p', 'tut-caption');
-  caption.id = 'tut-caption';
 
   const nav = el('div', 'tut-nav');
-  const prev = el('button', 'btn tut-arrow', '‹');
-  const counter = el('span', 'tut-count');
-  const next = el('button', 'btn tut-arrow', '›');
-  const pause = el('button', 'btn tut-mini', 'หยุด');
-  const close = el('button', 'btn tut-mini', 'ปิด');
-  nav.append(prev, counter, next, pause, close);
+  const prev = el('button', 'btn tut-arrow', '‹ ก่อนหน้า');
+  const dots = el('div', 'tut-dots');
+  const next = el('button', 'btn btn-primary tut-arrow', 'ถัดไป ›');
+  const close = el('button', 'btn btn-ghost tut-mini', 'ปิด ✕');
+  nav.append(prev, dots, next);
 
-  box.append(title, stage, caption, nav);
+  box.append(close, head, caption, stage, nav);
   root.appendChild(box);
   document.body.appendChild(root);
-
   stageEl = stage;
 
-  prev.addEventListener('click', () => goto(page - 1));
-  next.addEventListener('click', () => goto(page + 1));
-  close.addEventListener('click', closeTutorial);
-  pause.addEventListener('click', () => {
-    paused = !paused;
-    pause.textContent = paused ? 'เล่น' : 'หยุด';
-    if (paused) stopEverything(); else show();     // resume restarts this page
+  PAGES.forEach((p, i) => {
+    const dbtn = el('button', 'tut-dot');
+    dbtn.title = p.title;
+    dbtn.addEventListener('click', () => goto(i));
+    dots.appendChild(dbtn);
   });
 
-  root._parts = { title, caption, counter, pause };
+  prev.addEventListener('click', () => goto(page - 1));
+  next.addEventListener('click', () => (page === PAGES.length - 1 ? closeTutorial() : goto(page + 1)));
+  close.addEventListener('click', closeTutorial);
+  root.addEventListener('click', (e) => { if (e.target === root) closeTutorial(); });
+
+  root._parts = { title, step, caption, dots, next, prev };
 }
 
 function show() {
-  const { title, caption, counter } = root._parts;
-  stopEverything();                 // never leave a previous demo running
+  const { title, step, caption, dots, next, prev } = root._parts;
+  stopEverything();
   stageEl.innerHTML = '';
-  title.textContent = PAGES[page];
-  counter.textContent = (page + 1) + ' / ' + PAGES.length;
+  title.textContent = PAGES[page].title;
+  step.textContent = (page + 1) + '/' + PAGES.length;
   caption.textContent = '';
-  BUILDERS[page](stageEl, (t) => { caption.textContent = t; });
+  [...dots.children].forEach((d, i) => d.classList.toggle('on', i === page));
+  next.textContent = page === PAGES.length - 1 ? 'เข้าใจแล้ว ✓' : 'ถัดไป ›';
+  prev.disabled = page === 0;
+  PAGES[page].build(stageEl, (t) => { caption.textContent = t; });
 }
 
 function goto(n) {
   if (!open) return;
-  page = (n + PAGES.length) % PAGES.length;
-  if (paused) {                      // navigating while paused resumes playback
-    paused = false;
-    root._parts.pause.textContent = 'หยุด';
-  }
+  page = Math.max(0, Math.min(PAGES.length - 1, n));
+  paused = false;
   show();
 }
 
@@ -477,10 +392,8 @@ export function openTutorial() {
   open = true;
   paused = false;
   page = 0;
-  root._parts.pause.textContent = 'หยุด';
   root.classList.remove('hidden');
   show();
-
   onKey = (e) => {
     if (e.key === 'ArrowRight') goto(page + 1);
     else if (e.key === 'ArrowLeft') goto(page - 1);
@@ -490,10 +403,12 @@ export function openTutorial() {
 }
 
 export function closeTutorial() {
-  if (!root) return;
+  if (!root || !open) return;
   open = false;
-  stopEverything();                  // cancel every timer and sprite animator
+  stopEverything();
   stageEl.innerHTML = '';
   root.classList.add('hidden');
   if (onKey) { document.removeEventListener('keydown', onKey); onKey = null; }
 }
+
+export { wait };

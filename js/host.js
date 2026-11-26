@@ -25,6 +25,7 @@ import { startMatchClock } from './matchClock.js';
 import { parseWorkbook } from './questions.js';
 import { blackoutTransition, playResultSequence } from './effects.js';
 import { openTutorial } from './tutorial.js';
+import { drawQr, joinUrl } from './joinQr.js';
 
 const $ = (id) => document.getElementById(id);
 const code = new URLSearchParams(location.search).get('room');
@@ -66,6 +67,7 @@ const hunterUid = () => Object.keys(roles).find(isHunterId) || null;
 
 $('bar-code').textContent = code;
 $('lobby-code').textContent = code;
+try { drawQr($('join-qr'), joinUrl(code), window.innerWidth < 600 ? 3 : 4); } catch (e) { console.error(e); }
 
 init().catch(err => console.error(err));
 

@@ -123,3 +123,12 @@ async function checkRejoin() {
 }
 
 checkRejoin();
+
+// Opened from the Host's QR code: go straight to Join with the code filled in.
+const qrRoom = new URLSearchParams(location.search).get('room');
+if (qrRoom) {
+  showView('join');
+  $('join-code').value = qrRoom.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6);
+  $('join-name').focus();
+  $('msg-join').textContent = 'ห้อง ' + $('join-code').value + ' · ใส่ชื่อแล้วกดเข้าห้องได้เลย';
+}

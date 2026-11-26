@@ -89,7 +89,8 @@ export function buildMap(stage) {
   }));
   pixels.mountFg(effectLayer);
   const relayout = () => pixels.resize();
-  if (typeof ResizeObserver !== 'undefined') new ResizeObserver(relayout).observe(world);
+  const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(relayout) : null;
+  if (ro) ro.observe(world);
   window.addEventListener('resize', relayout);
   // A candle in each room, standing against the back wall away from the grate.
   ROOMS.forEach((r, i) => {
@@ -160,6 +161,14 @@ export function buildMap(stage) {
       camera.style.transition = 'transform ' + TIMING.cameraDuration + 'ms ease-in-out';
       camera.style.transform =
         'translate(' + (w / 2 - c.x * scale) + 'px,' + (h / 2 - c.y * scale) + 'px) scale(' + scale + ')';
+    },
+
+    /** Stop the pixel layer and listeners (used by the tutorial's demo maps). */
+    destroy() {
+      if (ro) ro.disconnect();
+      window.removeEventListener('resize', relayout);
+      pixels.destroy();
+      stage.innerHTML = '';
     },
 
     resetCamera() {
