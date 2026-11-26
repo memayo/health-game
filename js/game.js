@@ -5,6 +5,7 @@
 import { signIn, lastRoom } from './auth.js';
 import { db, ref, get, set, update, remove, onValue, onDisconnect, serverTimestamp } from './firebase.js';
 import { PHASE, ROLE, HUNTER_CHAR_ID, PHASE_LABEL } from './gameConfig.js';
+import { parseTargets } from './gameState.js';
 import { buildMap, ROOM_IDS, ADJACENCY } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
 import { renderGameOverView } from './gameOverView.js';
@@ -34,6 +35,9 @@ let chars = null;
 let hunterMode = 'target';
 let myMove = null;
 let myHunter = { target: null, lock: null };
+// Hunter only: where the Players were when the Hunter last saw them (end of the
+// previous round). Shown as faded ghosts during MOVE so the Hunter can predict.
+let lastSeen = {};
 let myAnswer = null;
 let selectedChoice = null;
 let lastRenderedRound = null;
@@ -96,7 +100,7 @@ async function init() {
   }
   $('q-submit').addEventListener('click', submitAnswer);
   // Local only: the tutorial never touches Firebase or game state.
-  $('tutorial-open').addEventListener('click', openTutorial);
+  $('tutorial-open').addEventListener('click', () => openTutorial({ code }));
   startMatchClock($('game-clock'), () => pub.gameEndsAt, serverNow);
 }
 
@@ -123,7 +127,11 @@ function syncPositionsSubscription() {
   const want = wantPositions();
   if (want && !positionsUnsub) {
     positionsUnsub = onValue(path('positions'),
-      s => { positions = s.val() || {}; syncCharacters(); render(); },
+      s => {
+        positions = s.val() || {};
+        if (isHunter()) lastSeen = { ...positions };
+        syncCharacters(); render();
+      },
       (err) => {                    // read revoked (Hunter entering MOVE)
         console.warn('[positions] read ended:', err && err.code, '- phase', pub.phase);
         positionsUnsub = null;
@@ -133,7 +141,7 @@ function syncPositionsSubscription() {
   } else if (!want && positionsUnsub) {
     positionsUnsub();
     positionsUnsub = null;
-    positions = {};                 // the Hunter keeps nothing between rounds
+    positions = {};                 // live positions are gone; only lastSeen ghosts remain
     syncCharacters();
   }
 }
@@ -170,9 +178,21 @@ function playerSpritesVisible() {
 
 function syncCharacters() {
   if (!playerSpritesVisible()) {
-    for (const id of [...chars.chars.keys()]) if (id !== HUNTER_CHAR_ID) chars.remove(id);
+    // Hunter during MOVE: only faded ghosts where each Player was last seen.
+    for (const id of [...chars.chars.keys()]) {
+      if (id === HUNTER_CHAR_ID || id === '__hunter2__') continue;
+      const p = players[id];
+      if (!p || p.alive === false || !lastSeen[id] || isHunterSelf(id)) chars.remove(id);
+    }
+    for (const [id, p] of Object.entries(players)) {
+      if (p.alive === false || !lastSeen[id] || isHunterSelf(id)) continue;
+      if (!chars.has(id)) chars.add(id, { kind: 'player', name: p.displayName || '', roomId: lastSeen[id] });
+      else chars.setRoom(id, lastSeen[id]);
+      chars.setGhost(id, true);
+    }
     return;
   }
+  for (const id of chars.chars.keys()) chars.setGhost(id, false);
   for (const [id, p] of Object.entries(players)) {
     const room = positions[id] || null;
     if (!chars.has(id)) {
@@ -186,9 +206,11 @@ function syncCharacters() {
     chars.setEliminated(id, p.alive === false);
   }
   for (const id of [...chars.chars.keys()]) {
-    if (id !== HUNTER_CHAR_ID && !players[id]) chars.remove(id);
+    if (!id.startsWith('__') && !players[id]) chars.remove(id);
   }
 }
+
+function isHunterSelf(id) { return isHunter() && id === uid; }
 
 /* ---------------- render ---------------- */
 
@@ -211,6 +233,7 @@ function render() {
     $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
     $('round').textContent = pub.round ? 'รอบ ' + pub.round + (pub.totalRounds ? '/' + pub.totalRounds : '') : '';
     $('host-away').classList.toggle('hidden', !(inGame && !over && pub.hostOnline === false));
+    $('hunter-rage').classList.toggle('hidden', !(inGame && !over && pub.hunterTargets > 1));
     renderRoleBadge(inGame && !over);
 
     if (inGame) closeTutorial();      // the game started: back to the real map
@@ -268,15 +291,19 @@ function renderMove() {
   const expired = moveExpired();
 
   if (isHunter()) {
+    const targets = parseTargets(myHunter.target, pub.hunterTargets || 1);
     for (const id of ROOM_IDS) {
       let state = 'selectable';
-      if (myHunter.target === id && myHunter.lock === id) state = 'target-lock';
-      else if (myHunter.target === id) state = 'target';
+      const t = targets.includes(id);
+      if (t && myHunter.lock === id) state = 'target-lock';
+      else if (t) state = 'target';
       else if (myHunter.lock === id) state = 'lock';
       mapApi.setRoomState(id, expired ? 'blocked' : state);
     }
     renderHunterControls(expired);
-    $('status').textContent = expired ? 'ล็อกแล้ว' : 'เลือกห้องเป้าหมาย';
+    const n = pub.hunterTargets || 1;
+    $('status').textContent = expired ? 'ล็อกแล้ว'
+      : n > 1 ? 'เลือกห้องเป้าหมายได้ 2 ห้อง (' + targets.length + '/2)' : 'เลือกห้องเป้าหมาย';
   } else {
     const here = positions[uid] || null;
     for (const id of ROOM_IDS) {
@@ -462,8 +489,16 @@ async function onRoomClick(roomId) {
   if (pub.phase !== PHASE.MOVE || !isAlive() || moveExpired()) return;
 
   if (isHunter()) {
+    let target = myHunter.target || null;
+    if (hunterMode === 'target') {
+      const max = pub.hunterTargets || 1;
+      let list = parseTargets(target, max);
+      if (list.includes(roomId)) list = list.filter(r => r !== roomId);   // tap again = undo
+      else list = [...list, roomId].slice(-max);                          // keep the newest
+      target = list.length ? list.join(',') : null;
+    }
     const next = {
-      target: hunterMode === 'target' ? roomId : (myHunter.target || null),
+      target,
       lock: hunterMode === 'lock' ? roomId : (myHunter.lock || null),
       at: serverTimestamp()
     };

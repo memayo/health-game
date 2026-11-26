@@ -15,7 +15,8 @@ import {
   assignRandomStartingRooms, assignRandomRoles, newQuestionDeck, drawQuestion,
   getTotalRounds, getRandomRoom, decideWinner,
   resolveMove, isCorrect, earnsShield, resolveAttackFor,
-  fitMatchTiming, quizSecondsFor, rankLeaderboard, matchTimeUp
+  fitMatchTiming, quizSecondsFor, rankLeaderboard, matchTimeUp,
+  parseTargets, isLateGame
 } from './gameState.js';
 import { buildMap } from './map.js';
 import { CharacterRenderer } from './characterRenderer.js';
@@ -136,7 +137,7 @@ async function init() {
     $(id).addEventListener('click', closeRoom);
   }
   // Local presentation only: it never touches Firebase or any game state.
-  $('tutorial-open').addEventListener('click', openTutorial);
+  $('tutorial-open').addEventListener('click', () => openTutorial({ code, qr: true }));
   renderTimeChoices();
   startMatchClock($('game-clock'), () => pub.gameEndsAt, serverNow);
 }
@@ -313,13 +314,16 @@ async function startGame() {
   updates['public/moveResults'] = null;
   updates['public/lockedRoom'] = null;
   updates['public/result'] = null;
-  Object.assign(updates, movePhaseUpdates());
+  updates['public/gameStartedAt'] = serverNow();
+  Object.assign(updates, movePhaseUpdates(1, getTotalRounds(questions), serverNow(), updates['public/gameEndsAt']));
   await update(ref(db, base), updates);
 }
 
-function movePhaseUpdates() {
+function movePhaseUpdates(round, totalRounds, startedAt, endsAt) {
   const secs = (timing && timing.moveSeconds) || MOVE_TIME_SECONDS;
+  const late = isLateGame({ round, totalRounds, startedAt, endsAt, now: serverNow() });
   return {
+    'public/hunterTargets': late ? 2 : 1,
     'public/phase': PHASE.MOVE,
     'public/phaseResolved': false,
     'public/moveStartedAt': serverNow(),
@@ -353,7 +357,7 @@ function syncCharacters() {
     chars.setEliminated(id, p.alive === false);
   }
   for (const id of [...chars.chars.keys()]) {
-    if (id !== HUNTER_CHAR_ID && (!players[id] || isHunterId(id))) chars.remove(id);
+    if (!id.startsWith('__') && (!players[id] || isHunterId(id))) chars.remove(id);
   }
 }
 
@@ -383,6 +387,7 @@ function onPublic() {
   $('board').classList.toggle('hidden', !inGame || over);
   $('gameover').classList.toggle('hidden', !over);
   $('phase').textContent = over ? '' : (PHASE_LABEL[pub.phase] || '');
+  $('hunter-rage').classList.toggle('hidden', !(inGame && !over && pub.hunterTargets > 1));
   $('round').textContent = pub.round ? 'รอบ ' + pub.round + (pub.totalRounds ? '/' + pub.totalRounds : '') : '';
   if (!inGame) refreshStart();
 
@@ -559,7 +564,8 @@ function moveReady() {
   for (const id of need) {
     if (id === hunter) {
       const a = (actions.hunter || {})[id];
-      if (!a || !a.target) return false;          // lock stays optional
+      // Late game: wait for both targets (or the deadline). Lock stays optional.
+      if (!a || parseTargets(a.target, pub.hunterTargets || 1).length < (pub.hunterTargets || 1)) return false;
     } else if (!moves[id] || !moves[id].target) {
       return false;
     }
@@ -610,7 +616,9 @@ async function resolveMovePhase() {
   // Timeout rules: no lock is ever carried over; the target falls back to the
   // Hunter's last/hidden room.
   const locked = (hunterAct && hunterAct.lock) || null;
-  const target = (hunterAct && hunterAct.target) || hunterRoom || getRandomRoom();
+  // Late game allows two targets ("roomA,roomC"); otherwise only the first counts.
+  const picked = parseTargets(hunterAct && hunterAct.target, pub.hunterTargets || 1);
+  const target = picked.length ? picked.join(',') : (hunterRoom || getRandomRoom());
 
   const moves = actions.moves || {};
   const updates = {};
@@ -650,7 +658,7 @@ async function resolveMovePhase() {
   }
 
   updates['hostPrivate/hunterTarget'] = target;
-  updates['hostPrivate/hunterRoom'] = target;          // becomes next round's fallback
+  updates['hostPrivate/hunterRoom'] = parseTargets(target)[0];   // next round's fallback
   updates['public/moveResults'] = moveResults;
   updates['public/lockedRoom'] = locked;               // revealed only now
   updates['public/quizStartedAt'] = quizStartedAt;
@@ -774,7 +782,7 @@ async function endRound() {
     };
   } else {
     updates['public/round'] = round + 1;
-    Object.assign(updates, movePhaseUpdates());
+    Object.assign(updates, movePhaseUpdates(round + 1, pub.totalRounds || 0, pub.gameStartedAt, pub.gameEndsAt));
   }
   await update(ref(db, base), updates);
 }

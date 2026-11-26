@@ -151,8 +151,9 @@ export function earnsShield(movementSuccess, answeredCorrectly) {
  * @returns {'safe'|'shielded'|'eliminated'}
  */
 export function resolveAttackFor(player, hunterCorrect, hunterTarget) {
-  if (!hunterCorrect || !hunterTarget) return 'safe';
-  if (player.currentRoom !== hunterTarget) return 'safe';
+  const targets = parseTargets(hunterTarget);
+  if (!hunterCorrect || !targets.length) return 'safe';
+  if (!targets.includes(player.currentRoom)) return 'safe';
   return player.shield ? 'shielded' : 'eliminated';
 }
 
@@ -248,4 +249,29 @@ export function drawQuestion(deck, questionIds) {
     d = { order, pos: 0, cycle: (d.cycle || 1) + 1 };
   }
   return { id: d.order[d.pos], deck: { ...d, pos: d.pos + 1 } };
+}
+
+/**
+ * Hunter targets travel as one string ("roomA" or "roomA,roomC") so the existing
+ * database rules (target must be a string) keep working. Pure.
+ * @returns {string[]} valid, unique room ids, at most `max`
+ */
+export function parseTargets(value, max = 2) {
+  const list = Array.isArray(value) ? value : String(value || '').split(',');
+  const out = [];
+  for (const raw of list) {
+    const id = String(raw).trim();
+    if (ROOM_IDS.includes(id) && !out.includes(id)) out.push(id);
+  }
+  return out.slice(0, max);
+}
+
+/**
+ * "Late game": the second half of the match by rounds or by the clock, whichever
+ * comes first. The Hunter may then pick two target rooms. Pure.
+ */
+export function isLateGame({ round, totalRounds, startedAt, endsAt, now }) {
+  if (totalRounds && round > Math.ceil(totalRounds / 2)) return true;
+  if (startedAt && endsAt && now >= startedAt + (endsAt - startedAt) / 2) return true;
+  return false;
 }

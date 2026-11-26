@@ -4,6 +4,10 @@
 
 import { TIMING, HUNTER_CHAR_ID } from './gameConfig.js';
 import { EFFECT_ASSETS, CHARACTER_ASSETS } from './assetConfig.js';
+import { parseTargets } from './gameState.js';
+
+// A second skull for late-game double attacks; added on demand.
+const HUNTER2_ID = '__hunter2__';
 
 const wait = (ms) => new Promise(r => setTimeout(r, ms));
 
@@ -141,7 +145,10 @@ export async function playResultSequence(mapApi, chars, result) {
   for (const [uid, outcome] of Object.entries(result.outcomes || {})) {
     if (outcome === 'eliminated') chars.holdVisible(uid, true);
   }
-  if (result.hunterTarget) mapApi.focusRoom(result.hunterTarget);
+  const targets = parseTargets(result.hunterTarget);
+  // One target: zoom in on it. Two (late game): keep the whole map in view.
+  if (targets.length === 1) mapApi.focusRoom(targets[0]);
+  else mapApi.resetCamera();
   await wait(TIMING.cameraDuration);
 
   if (!result.hunterCorrect) {
@@ -151,18 +158,23 @@ export async function playResultSequence(mapApi, chars, result) {
     return;
   }
 
-  // 1. Hunter emerges from the pipe of the target room.
-  if (chars.has(HUNTER_CHAR_ID)) {
-    chars.setHidden(HUNTER_CHAR_ID, false);
-    chars.placeAtPipe(HUNTER_CHAR_ID, result.hunterTarget);
+  // 1. Hunter emerges from the pipe of each target room.
+  const skulls = [HUNTER_CHAR_ID, HUNTER2_ID];
+  if (targets.length > 1 && !chars.has(HUNTER2_ID) && chars.has(HUNTER_CHAR_ID)) {
+    chars.add(HUNTER2_ID, { kind: 'hunter', roomId: null, hidden: true });
   }
-  await playHunterEmerge(mapApi, result.hunterTarget);
+  targets.forEach((room, i) => {
+    if (!chars.has(skulls[i])) return;
+    chars.setHidden(skulls[i], false);
+    chars.placeAtPipe(skulls[i], room);
+  });
+  await Promise.all(targets.map(room => playHunterEmerge(mapApi, room)));
 
   // 2. Exactly one second.
   await wait(TIMING.hunterEmergeWait);
 
   // 3. Attack.
-  await playHunterAttack(mapApi, result.hunterTarget);
+  await Promise.all(targets.map(room => playHunterAttack(mapApi, room)));
 
   // 4. Per-player outcome.
   const jobs = [];
@@ -183,4 +195,5 @@ export async function playResultSequence(mapApi, chars, result) {
   await Promise.all(jobs);
   await wait(TIMING.resultDelay);
   mapApi.resetCamera();
+  if (chars.has(HUNTER2_ID)) chars.setHidden(HUNTER2_ID, true);
 }

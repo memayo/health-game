@@ -172,9 +172,15 @@ Hidden choices and correct answers are never in `public/`.
   the lobby when the Host presses Start are left out of the match.
 - No database rule changes were needed for any of this.
 
-The Hunter sees no Player sprites during MOVE and must predict where Players go; once
-movement has resolved the Hunter sees resolved positions for QUIZ and RESULT, then loses
-them again at the next MOVE. This is enforced by the rules, not just the UI: the
+The Hunter sees no live Player positions during MOVE and must predict where Players go;
+the Hunter's own client keeps where each Player was last seen (end of the previous round)
+and shows them as faded ghosts. Once movement has resolved the Hunter sees resolved
+positions for QUIZ and RESULT, then loses them again at the next MOVE.
+
+**Late game**: in the second half of the match (past half the rounds, or half the match
+clock, whichever comes first; `isLateGame`) `public/hunterTargets` becomes 2 and the Hunter
+may pick two target rooms. They travel as one string, `"roomA,roomC"` (`parseTargets`), so
+the database rules did not change; two skulls attack and the camera stays on the whole map. This is enforced by the rules, not just the UI: the
 `positions` read is denied to the Hunter while `public/phase` is `move`, so the client
 attaches and detaches that listener as the phase changes. Move submissions, answers and
 answer keys stay hidden from the Hunter at all times.

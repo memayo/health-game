@@ -82,6 +82,12 @@ export class CharacterRenderer {
   }
 
   /** An eliminated character is removed from the map (and from slot packing). */
+  /** Faded "last seen here" marker (the Hunter's memory during MOVE). */
+  setGhost(id, on) {
+    const c = this.chars.get(id);
+    if (c) c.el.classList.toggle('ghost', !!on);
+  }
+
   setEliminated(id, eliminated) {
     const c = this.chars.get(id);
     if (!c) return;

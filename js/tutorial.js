@@ -12,6 +12,7 @@ import { SpriteAnimator } from './spriteAnimator.js';
 import { LiveSprite } from './pixelStage.js';
 import { CHARACTER_ASSETS } from './assetConfig.js';
 import { HUNTER_CHAR_ID } from './gameConfig.js';
+import { drawQr, joinUrl } from './joinQr.js';
 
 /* ---------------- config ---------------- */
 
@@ -215,7 +216,8 @@ function pageHunter(host, say) {
   points(host, [
     ['🎯', 'ห้องเป้าหมาย: Hunter จะโผล่ไปโจมตีห้องนี้ (เลือกได้ทุกห้อง)'],
     ['🔒', 'ปิดห้อง: ใครเดินเข้าห้องนี้จะเดินไม่สำเร็จ (ห้องแดงเห็นตอนตอบคำถาม)'],
-    ['🙈', 'ตอนเดิน Hunter มองไม่เห็นผู้กล้า ต้องเดาใจเอา']
+    ['👻', 'ตอนเดิน Hunter เห็นแค่เงาจางๆ ว่ารอบที่แล้วใครอยู่ห้องไหน ต้องเดาว่าจะเดินไปทางไหน'],
+    ['⚡', 'ครึ่งหลังของเกม Hunter โกรธ! เลือกห้องเป้าหมายได้ 2 ห้อง']
   ]);
   d.add('p1', 'คุณ', 'B');
   say('ฝั่ง Hunter: เลือกห้องเป้าหมาย กับห้องที่จะปิด');
@@ -348,7 +350,14 @@ function build() {
   nav.append(prev, dots, next);
 
   box.append(close, head, caption, stage, nav);
-  root.appendChild(box);
+  // Room code + join QR stay on screen while the Host walks the room through this.
+  const join = el('aside', 'tut-join hidden');
+  const jl = el('span', 'tut-join-label', 'รหัสห้อง');
+  const jc = el('div', 'tut-join-code');
+  const jq = el('canvas', 'join-qr tut-join-qr');
+  const jt = el('span', 'tut-join-label', 'สแกนเข้าห้อง');
+  join.append(jl, jc, jq, jt);
+  root.append(join, box);
   document.body.appendChild(root);
   stageEl = stage;
 
@@ -364,7 +373,7 @@ function build() {
   close.addEventListener('click', closeTutorial);
   root.addEventListener('click', (e) => { if (e.target === root) closeTutorial(); });
 
-  root._parts = { title, step, caption, dots, next, prev };
+  root._parts = { title, step, caption, dots, next, prev, join, jc, jq };
 }
 
 function show() {
@@ -387,8 +396,21 @@ function goto(n) {
   show();
 }
 
-export function openTutorial() {
+/**
+ * @param {{code?:string, qr?:boolean}} [opts] show the room code (and join QR) beside
+ *        the tutorial, e.g. on the Host's screen while players are still joining.
+ */
+export function openTutorial(opts = {}) {
   if (!root) build();
+  const { join, jc, jq } = root._parts;
+  const code = opts && typeof opts === 'object' && opts.code;
+  join.classList.toggle('hidden', !code);
+  if (code) {
+    jc.textContent = code;
+    jq.classList.toggle('hidden', !opts.qr);
+    if (opts.qr) { try { drawQr(jq, joinUrl(code), window.innerWidth < 700 ? 2 : 4); } catch (e) { console.error(e); } }
+    join.querySelectorAll('.tut-join-label')[1].classList.toggle('hidden', !opts.qr);
+  }
   open = true;
   paused = false;
   page = 0;
