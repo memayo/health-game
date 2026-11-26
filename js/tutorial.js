@@ -214,21 +214,38 @@ function pageMove(host, say) {
 function pageHunter(host, say) {
   const d = demoMap(host);
   points(host, [
-    ['🎯', 'ห้องเป้าหมาย: Hunter จะโผล่ไปโจมตีห้องนี้ (เลือกได้ทุกห้อง)'],
-    ['🔒', 'ปิดห้อง: ใครเดินเข้าห้องนี้จะเดินไม่สำเร็จ (ห้องแดงเห็นตอนตอบคำถาม)'],
-    ['👻', 'ตอนเดิน Hunter เห็นแค่เงาจางๆ ว่ารอบที่แล้วใครอยู่ห้องไหน ต้องเดาว่าจะเดินไปทางไหน'],
+    ['👻', 'ตอนเดิน Hunter มองไม่เห็นผู้กล้าตรงๆ เห็นแค่เงาจางๆ ว่ารอบที่แล้วใครอยู่ห้องไหน'],
+    ['🎯', 'ห้องเป้าหมาย: เดาว่าผู้กล้าจะเดินไปห้องไหน แล้วเลือกห้องนั้น (เลือกได้ทุกห้อง)'],
+    ['🔒', 'ปิดห้อง: ใครเดินเข้าห้องที่ปิด จะเดินไม่สำเร็จ = ไม่ได้โล่'],
     ['⚡', 'ครึ่งหลังของเกม Hunter โกรธ! เลือกห้องเป้าหมายได้ 2 ห้อง']
   ]);
-  d.add('p1', 'คุณ', 'B');
-  say('ฝั่ง Hunter: เลือกห้องเป้าหมาย กับห้องที่จะปิด');
+  d.add('p1', 'มิ้นท์', 'B');
+  d.chars.setGhost('p1', true);
+  say('👻 Hunter เห็นเงา: รอบที่แล้วมิ้นท์อยู่ห้อง B');
   runSteps([
-    [TUT.beat, () => { for (const L of 'ABCDEF') d.state(L, 'selectable'); d.cursor.to('C'); }],
+    [TUT.read, () => { say('จาก B เดินไปได้แค่ A, C หรือ E → เดาเอา!'); for (const L of 'ACE') d.state(L, 'reachable'); }],
+    [TUT.read, () => { d.clear(); for (const L of 'ABCDEF') d.state(L, 'selectable'); d.cursor.to('C'); }],
     [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('C', 'target'); say('🎯 เป้าหมาย: ห้อง C'); }],
     [TUT.read, () => d.cursor.to('E')],
     [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('E', 'lock'); say('🔒 ปิดห้อง E'); }],
-    [TUT.read, () => { d.cursor.hide(); d.clear(); say('ผู้กล้าไม่รู้ว่าห้อง E ถูกปิด… แล้วเลือกเดินไป E'); d.state('E', 'chosen'); }],
-    [TUT.read, () => { d.clear(); d.state('E', 'locked-reveal'); d.chars.stayIdle('p1'); d.banner('ห้อง E ถูกปิด! เดินไม่สำเร็จ อยู่ที่ B', 'bad'); say('เดินไม่สำเร็จ = รอบนี้ไม่ได้โล่ (ดูหน้าถัดไป)'); }],
-    [TUT.read + 400, () => {}]
+    [TUT.read, () => {
+      d.cursor.hide(); d.clear(); d.chars.setGhost('p1', false);
+      say('ฝั่งมิ้นท์ไม่รู้ว่า E ถูกปิด… แล้วเลือกเดินไป E'); d.state('E', 'chosen');
+    }],
+    [TUT.read, () => {
+      d.clear(); d.state('E', 'locked-reveal'); d.chars.stayIdle('p1');
+      d.banner('ห้อง E ถูกปิด! เดินไม่สำเร็จ = ไม่ได้โล่', 'bad'); say('ติดกับดักแล้ว!');
+    }],
+    [TUT.read + 300, () => {
+      d.clear(); d.banner('⚡ ครึ่งหลังของเกม: เลือกเป้าหมายได้ 2 ห้อง!', 'bad', TUT.read + 1400);
+      say('ครึ่งหลังของเกม Hunter เลือกเป้าหมายได้ 2 ห้อง');
+      for (const L of 'ABCDEF') d.state(L, 'selectable');
+      d.cursor.to('A');
+    }],
+    [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('A', 'target'); }],
+    [500, () => d.cursor.to('F')],
+    [TUT.cursorGlide + 100, () => { d.cursor.click(); d.state('F', 'target'); say('🎯🎯 เป้าหมาย: ห้อง A และ F'); }],
+    [TUT.read + 600, () => d.cursor.hide()]
   ]);
 }
 
